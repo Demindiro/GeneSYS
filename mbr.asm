@@ -13,16 +13,15 @@ macro log msg {
 
 use16
 start:
-	mov ebp, 0x1000
+	mov esp, 0x1000
 
 load_memory_map:
 	log msg_e810
 	; ... we'll assume it won't be more than 128 free entries or so
 	; ... and also than E810 is definitely present
-	; ... and address 1024+256 actually exists and is unused regular RAM
 	xor ebx, ebx
 	mov edx, 0x534d4150
-	mov di, 1024 + 256
+	mov di, 0x7000
 .loop:
 	mov eax, 0xe820
 	mov ecx, 24
@@ -52,31 +51,37 @@ disable_pic:
     out 0xa1, al
     out 0x21, al
 
-identity_map_2mb:
-	log msg_identity_map_2mb
-	mov di, 0x1000
-	mov dx, 3
+identity_map:
+	log msg_identity_map
 .clear:
-	mov si, di
-	mov cx, 0x1000 / 2
+	mov di, 0x1000
+	mov cx, (0x7000 - 0x1000) / 2
 	xor eax, eax ; intentionally zero upper for later use
 	rep stosw
-	lea ax, [di + 3] ; present, write
-	mov [si], ax
-	dec dx
-	jnz .clear
-
-	mov ax, 3
-.leaves:
-	stosd
-	add eax, 0x1000
+	; hugepages in the 0 to 4MiB range are always split into 4KiB pages
+	; see SDM 13.11.9 Large Page Size Considerations
+	;
+	; it supposedly has a performance penalty, but whatever :)
+	; it just needs to work
+.tree:
+	mov word [0x1000], 0x2000 or 3 ; P, W
+	mov word [0x2000], 0x3000 or 3 ; P, W
+	mov word [0x2008], 0x4000 or 3 ; P, W
+	mov word [0x2010], 0x5000 or 3 ; P, W
+	mov word [0x2018], 0x6000 or 3 ; P, W
+	; FIXME is this proper? might cross MTRR boundaries above 4MiB...
+.leaves_2m:
+	mov eax, 0 or 0x83 ; page size, present, write
+	mov di, 0x3000
+@@:	stosd
+	add eax, (1 shl 21)
 	add di, 4
-	cmp eax, (1 shl 20) or 3
-	jne .leaves
+	cmp di, 0x7000
+	jne @b
 
 enter_long_mode:
 	log msg_enter_long_mode
-    mov eax, 0x1000
+	mov eax, 0x1000
     mov cr3, eax
     mov eax, 010100000b
     mov cr4, eax
@@ -88,7 +93,7 @@ enter_long_mode:
     or ebx,0x80000001
     mov cr0, ebx
     lgdt [gdtr]
-    jmp 0x10:bootloader_base_address
+    jmp 0x10:bootloader.base_address
 
 purge log
 
@@ -117,7 +122,7 @@ msg_nl: db 2, 13, 10
 msg msg_e810, "loading E810"
 msg msg_partition, "loading first partition"
 msg msg_disable_pic, "disabling PIC"
-msg msg_identity_map_2mb, "identity-mapping first 2MiB"
+msg msg_identity_map, "identity-mapping first 4GiB"
 msg msg_enter_long_mode, "entering long mode"
 purge msg
 
@@ -134,41 +139,55 @@ gdtr:
 dw gdt.end - gdt - 1
 dd gdt
 
-bootloader_base_address = 0x8000
-bootloader_required_size = 0x10000 - 0x8000
-
 edd_packet:
 .packet_size: dw 16
-.sectors: dw bootloader_required_size / 512
+.sectors: dw bootloader.required_size / 512
 .offset: dw 0x8000
 .segment: dw 0xdead ; filled in at runtime
-.lba: dq partition.lba.3
+.lba: dq gpt.part1 shr 9
 
 
 times (440-($-start)) db 0
 mbr:
-db "LMNG"
-db 0, 0
-rept 4 i:0 {
-	.partition.#i:
-	if i = 3
-		dd 1
-	else
-		dd 0
-	end if
-	dd 0, partition.lba.#i, partition.sectors.#i
-}
+db "LMNG", 0, 0
+dd 0x00020000, 0xffffffee, 1, 0xffffffff
+times 3 dq 0, 0
 db 0x55, 0xaa
 assert $ - start = 512
 
 org 512
 
-times (0x1000 - 512) db 0
-
-rept 4 i:0 {
-	local base
-	base: partition.#i
-	times (512-$) and 0x1ff db 0
-	partition.lba.#i = base shr 9
-	partition.sectors.#i = ($ - base) shr 9
+macro gpt_header {
+	db "EFI PART" ; header signature
+	dd 0x00010000 ; header revision
+	dd 92         ; header size
+	dd 0          ; header CRC32 (FIXME)
+	dd 0          ; reserved
+	dq 1          ; header LBA
+	dq gpt_alt    ; alternate header LBA
+	dq 0x8000     ; first usable LBA
+	dq 0xf000     ; last usable LBA
+	db "Legacy Lemmings!" ; GUID
+	dq 2          ; partition entry LBA
+	dd 128        ; number of partitions
+	dd 128        ; partition entry size
+	dd 0          ; partition entries CRC32 (FIXME)
 }
+
+gpt: gpt_header
+
+times (0x2000 - $) db 0
+times (0x8000 - $) db 0
+
+gpt.part1:
+file "build/bootloader.bin"
+
+times (bootloader.required_size - ($ - gpt.part1)) db 0
+assert $ = 0x10000
+
+gpt_alt: gpt_header
+times ((0x1000 - $) and 0xfff) db 0
+
+; must be at least this long to boot in QEMU
+; what the fuck do I fucking know this makes no fucking sense
+times (((1 shl 19) - $) - (1 shl 13) - (1 shl 9) + 1) db 0
