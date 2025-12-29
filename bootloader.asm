@@ -25,6 +25,9 @@ macro panic {
 	hlt
 }
 
+	mov rax, cr3
+	mov dword [page_root], eax
+
 	call acpi_find_rsdp
 	test esi, esi
 	jz err_no_rsdp
@@ -49,14 +52,18 @@ search_acpi_tables:
 	loop @b
 	jmp .end
 .found_mcfg:
-	log.ok msg_ok_mcfg
 	mov [acpi.mcfg], eax
+	log.ok msg_ok_mcfg
 	loop @b
 .found_madt:
-	log.ok msg_ok_madt
 	mov [acpi.madt], eax
+	log.ok msg_ok_madt
 	loop @b
 .end:
+
+
+	call acpi.smp.init
+
 
 	ifne dword [acpi.mcfg], 0, @f
 	lea rsi, [msg_err_no_mcfg]
@@ -102,6 +109,11 @@ _print:
 	push rdi
 	push rdx
 	mov edx, 160
+	push rax
+@@:	xor eax, eax
+	lock cmpxchg [console.lock], dl
+	ifne al, 0, @b
+	pop rax
 	sub edx, ecx
 	test ecx, ecx
 	jz .e
@@ -115,6 +127,7 @@ _print:
 	mov ecx, edx
 	xor eax, eax
 	rep stosw
+	mov byte [console.lock], 0
 	pop rdx
 	pop rdi
 	pop rcx
@@ -138,9 +151,14 @@ msg ok_rsdt, "found RSDT"
 msg ok_mcfg, "found MCFG"
 msg ok_madt, "found MADT"
 
+; this being 32-bits is very deliberate because
+; the APs need to be able to read it from real mode
+page_root: dd 0
+
 acpi.mcfg: dd 0
 acpi.madt: dd 0
 
+console.lock: db 0
 console.row: db 0
 
 times (bootloader.required_size - ($ - bootloader.base_address)) db 0
