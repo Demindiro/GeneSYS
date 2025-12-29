@@ -112,7 +112,7 @@ _print:
 	push rax
 @@:	xor eax, eax
 	lock cmpxchg [console.lock], dl
-	ifne al, 0, @b
+	jne @b
 	pop rax
 	sub edx, ecx
 	test ecx, ecx
