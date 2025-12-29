@@ -4,6 +4,17 @@ macro ifeq x, y, target {
 	cmp x, y
 	je target
 }
+macro ifne x, y, target {
+	cmp x, y
+	jne target
+}
+
+macro log.ok msg {
+	push rsi
+	lea rsi, [msg]
+	call printmsg.ok
+	pop rsi
+}
 
 use64
 
@@ -14,39 +25,50 @@ macro panic {
 	hlt
 }
 
+	mov rax, cr3
+	mov dword [page_root], eax
+
 	call acpi_find_rsdp
 	test esi, esi
 	jz err_no_rsdp
-	push rsi
-	lea rsi, [msg_ok_rsdp]
-	call printmsg.ok
-	pop rsi
+	log.ok msg_ok_rsdp
 
 	mov esi, [rsi + 16]
 	cmp dword [rsi], "RSDT"
 	jne err_no_rsdt
-	push rsi
-	lea rsi, [msg_ok_rsdt]
-	call printmsg.ok
-	pop rsi
+	log.ok msg_ok_rsdt
 
-search_mcfg:
+search_acpi_tables:
 	mov ecx, [rsi + 4]
+	sub ecx, 36
+	shr ecx, 2
 	add rsi, 36
 @@:	lodsd
-	cmp dword [eax], "MCFG"
-	je .found
+	mov eax, [eax]
+	cmp eax, "MCFG"
+	je .found_mcfg
+	cmp eax, "APIC" ; yes, "MADT" has "APIC" as signature
+	je .found_madt
 	loop @b
-	jnz .no_mcfg
-.found:
-	push rsi
-	lea rsi, [msg_ok_mcfg]
-	call printmsg.ok
-	pop rsi
+	jmp .end
+.found_mcfg:
+	mov [acpi.mcfg], eax
+	log.ok msg_ok_mcfg
+	loop @b
+.found_madt:
+	mov [acpi.madt], eax
+	log.ok msg_ok_madt
+	loop @b
+.end:
 
-.no_mcfg:
+
+	call acpi.smp.init
+
+
+	ifne dword [acpi.mcfg], 0, @f
 	lea rsi, [msg_err_no_mcfg]
 	call printmsg.warn
+@@:
 
 	call pci_scan
 
@@ -87,6 +109,11 @@ _print:
 	push rdi
 	push rdx
 	mov edx, 160
+	push rax
+@@:	xor eax, eax
+	lock cmpxchg [console.lock], dl
+	ifne al, 0, @b
+	pop rax
 	sub edx, ecx
 	test ecx, ecx
 	jz .e
@@ -100,6 +127,7 @@ _print:
 	mov ecx, edx
 	xor eax, eax
 	rep stosw
+	mov byte [console.lock], 0
 	pop rdx
 	pop rdi
 	pop rcx
@@ -121,7 +149,16 @@ msg err_no_mcfg, "failed to find MCFG"
 msg ok_rsdp, "found RSDP"
 msg ok_rsdt, "found RSDT"
 msg ok_mcfg, "found MCFG"
+msg ok_madt, "found MADT"
 
+; this being 32-bits is very deliberate because
+; the APs need to be able to read it from real mode
+page_root: dd 0
+
+acpi.mcfg: dd 0
+acpi.madt: dd 0
+
+console.lock: db 0
 console.row: db 0
 
 times (bootloader.required_size - ($ - bootloader.base_address)) db 0
