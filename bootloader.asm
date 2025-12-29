@@ -4,6 +4,17 @@ macro ifeq x, y, target {
 	cmp x, y
 	je target
 }
+macro ifne x, y, target {
+	cmp x, y
+	jne target
+}
+
+macro log.ok msg {
+	push rsi
+	lea rsi, [msg]
+	call printmsg.ok
+	pop rsi
+}
 
 use64
 
@@ -17,36 +28,40 @@ macro panic {
 	call acpi_find_rsdp
 	test esi, esi
 	jz err_no_rsdp
-	push rsi
-	lea rsi, [msg_ok_rsdp]
-	call printmsg.ok
-	pop rsi
+	log.ok msg_ok_rsdp
 
 	mov esi, [rsi + 16]
 	cmp dword [rsi], "RSDT"
 	jne err_no_rsdt
-	push rsi
-	lea rsi, [msg_ok_rsdt]
-	call printmsg.ok
-	pop rsi
+	log.ok msg_ok_rsdt
 
-search_mcfg:
+search_acpi_tables:
 	mov ecx, [rsi + 4]
+	sub ecx, 36
+	shr ecx, 2
 	add rsi, 36
 @@:	lodsd
-	cmp dword [eax], "MCFG"
-	je .found
+	mov eax, [eax]
+	cmp eax, "MCFG"
+	je .found_mcfg
+	cmp eax, "APIC" ; yes, "MADT" has "APIC" as signature
+	je .found_madt
 	loop @b
-	jnz .no_mcfg
-.found:
-	push rsi
-	lea rsi, [msg_ok_mcfg]
-	call printmsg.ok
-	pop rsi
+	jmp .end
+.found_mcfg:
+	log.ok msg_ok_mcfg
+	mov [acpi.mcfg], eax
+	loop @b
+.found_madt:
+	log.ok msg_ok_madt
+	mov [acpi.madt], eax
+	loop @b
+.end:
 
-.no_mcfg:
+	ifne dword [acpi.mcfg], 0, @f
 	lea rsi, [msg_err_no_mcfg]
 	call printmsg.warn
+@@:
 
 	call pci_scan
 
@@ -121,6 +136,10 @@ msg err_no_mcfg, "failed to find MCFG"
 msg ok_rsdp, "found RSDP"
 msg ok_rsdt, "found RSDT"
 msg ok_mcfg, "found MCFG"
+msg ok_madt, "found MADT"
+
+acpi.mcfg: dd 0
+acpi.madt: dd 0
 
 console.row: db 0
 
