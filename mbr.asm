@@ -87,7 +87,7 @@ enter_long_mode:
     mov cr4, eax
     mov ecx, 0xc0000080
     rdmsr
-    or ax, 0x100
+    or ax, 0x101
     wrmsr
     mov ebx, cr0
     or ebx,0x80000001

@@ -25,6 +25,24 @@ macro panic {
 	hlt
 }
 
+	lgdt [gdtr]
+	push 0x8
+	push @f
+	retfq
+@@:	mov ax, 0x10
+	mov ss, ax
+	mov ds, ax
+	mov es, ax
+	mov fs, ax
+	mov gs, ax
+
+	call page.init
+	call syscall.init
+	mov rcx, 0x0000400000000000
+	xor r11, r11
+	sysretq
+	hlt
+
 	mov rax, cr3
 	mov dword [page_root], eax
 
@@ -143,6 +161,8 @@ macro msg name, s {
 include "bootloader/gdt.asm"
 include "bootloader/acpi.asm"
 include "bootloader/pci.asm"
+include "bootloader/paging.asm"
+include "bootloader/syscall.asm"
 
 msg err_no_rsdp, "failed to find RSDP"
 msg err_no_rsdt, "RSDP does not point to RSDT"

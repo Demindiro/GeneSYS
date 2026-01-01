@@ -49,11 +49,11 @@ acpi.smp.boot16:
     mov cr4, eax
     mov ecx, 0xc0000080
     rdmsr
-    or ax, 0x100
+    or ax, 0x101
     wrmsr
     mov ebx, cr0
     or ebx,0x80000001
     mov cr0, ebx
     lgdt [gdtr]
-    jmp 0x10:acpi.smp.ap._init
+    jmp 0x8:acpi.smp.ap._init
 use64
