@@ -25,6 +25,33 @@ macro panic {
 org bootloader.base_address
 
 use16
+identity_map:
+.clear:
+	mov di, 0x1000
+	mov cx, (0x7000 - 0x1000) / 2
+	xor eax, eax ; intentionally zero upper for later use
+	rep stosw
+	; hugepages in the 0 to 4MiB range are always split into 4KiB pages
+	; see SDM 13.11.9 Large Page Size Considerations
+	;
+	; it supposedly has a performance penalty, but whatever :)
+	; it just needs to work
+.tree:
+	mov word [0x1000], 0x2000 or 3 ; P, W
+	mov word [0x2000], 0x3000 or 3 ; P, W
+	mov word [0x2008], 0x4000 or 3 ; P, W
+	mov word [0x2010], 0x5000 or 3 ; P, W
+	mov word [0x2018], 0x6000 or 3 ; P, W
+	; FIXME is this proper? might cross MTRR boundaries above 4MiB...
+.leaves_2m:
+	mov eax, 0 or 0x83 ; page size, present, write
+	mov di, 0x3000
+@@:	stosd
+	add eax, (1 shl 21)
+	add di, 4
+	cmp di, 0x7000
+	jne @b
+
 enter_long_mode:
 	mov eax, 0x1000
 	mov cr3, eax
