@@ -75,6 +75,7 @@ enter_long_mode:
 
 use64
 main:
+	call alloc.init
 	call page.init
 	call syscall.init
 	mov rcx, 0x0000400000000000
@@ -200,6 +201,7 @@ macro msg name, s {
 include "bootloader/gdt.asm"
 include "bootloader/acpi.asm"
 include "bootloader/pci.asm"
+include "bootloader/alloc.asm"
 include "bootloader/paging.asm"
 include "bootloader/syscall.asm"
 
