@@ -21,7 +21,7 @@ load_memory_map:
 	; ... and also than E810 is definitely present
 	xor ebx, ebx
 	mov edx, 0x534d4150
-	mov di, 0x7000
+	mov di, 0x500
 .loop:
 	mov eax, 0xe820
 	mov ecx, 24
@@ -35,6 +35,10 @@ load_memory_map:
 @@:	test ebx, ebx
 	jnz .loop
 .end:
+	; use -1 (negative) as end marker
+	mov al, -1
+	mov cx, 16
+	rep stosb
 
 load_partition:
 	log msg_partition
