@@ -54,14 +54,6 @@ acpi.smp.boot16:
     mov ebx, cr0
     or ebx,0x80000001
     mov cr0, ebx
-    lgdt [.gdtr]
+    lgdt [gdtr]
     jmp 0x10:acpi.smp.ap._init
-.gdt:
-dq 0x00000000000000000        ; 0x00 null
-dq 0x000af92000000ffff        ; 0x08 64-bit data segment
-dq 0x000af9a000000ffff        ; 0x10 64-bit code segment
-.gdt.end:
-.gdtr:
-dw .gdt.end - .gdt - 1
-dd .gdt
 use64

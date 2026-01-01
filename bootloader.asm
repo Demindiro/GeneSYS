@@ -140,6 +140,7 @@ macro msg name, s {
 	end:
 }
 
+include "bootloader/gdt.asm"
 include "bootloader/acpi.asm"
 include "bootloader/pci.asm"
 
