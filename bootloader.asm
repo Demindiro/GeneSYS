@@ -16,26 +16,38 @@ macro log.ok msg {
 	pop rsi
 }
 
-use64
-
-org bootloader.base_address
-
 macro panic {
 	cli
 	hlt
 }
 
+
+org bootloader.base_address
+
+use16
+enter_long_mode:
+	mov eax, 0x1000
+	mov cr3, eax
+	mov eax, 010100000b
+	mov cr4, eax
+	mov ecx, 0xc0000080
+	rdmsr
+	or ax, 0x101
+	wrmsr
+	mov ebx, cr0
+	or ebx,0x80000001
+	mov cr0, ebx
 	lgdt [gdtr]
-	push 0x8
-	push @f
-	retfq
-@@:	mov ax, 0x10
+	mov ax, 0x10
 	mov ss, ax
 	mov ds, ax
 	mov es, ax
 	mov fs, ax
 	mov gs, ax
+	jmp 0x8:main
 
+use64
+main:
 	call page.init
 	call syscall.init
 	mov rcx, 0x0000400000000000

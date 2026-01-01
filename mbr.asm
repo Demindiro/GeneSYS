@@ -79,21 +79,8 @@ identity_map:
 	cmp di, 0x7000
 	jne @b
 
-enter_long_mode:
-	log msg_enter_long_mode
-	mov eax, 0x1000
-    mov cr3, eax
-    mov eax, 010100000b
-    mov cr4, eax
-    mov ecx, 0xc0000080
-    rdmsr
-    or ax, 0x101
-    wrmsr
-    mov ebx, cr0
-    or ebx,0x80000001
-    mov cr0, ebx
-    lgdt [gdtr]
-    jmp 0x10:bootloader.base_address
+enter_bootloader:
+	jmp bootloader.base_address
 
 purge log
 
@@ -123,21 +110,7 @@ msg msg_e810, "loading E810"
 msg msg_partition, "loading first partition"
 msg msg_disable_pic, "disabling PIC"
 msg msg_identity_map, "identity-mapping first 4GiB"
-msg msg_enter_long_mode, "entering long mode"
 purge msg
-
-
-gdt:
-; I confess, I used ChatGPT for this
-; just swapped the last two entries because lol syscall lol
-dq 0x00000000000000000        ; 0x00 null
-dq 0x000af92000000ffff        ; 0x08 64-bit data segment
-dq 0x000af9a000000ffff        ; 0x10 64-bit code segment
-.end:
-
-gdtr:
-dw gdt.end - gdt - 1
-dd gdt
 
 edd_packet:
 .packet_size: dw 16
