@@ -1,4 +1,4 @@
-ALLOC.MAP.BASE = 0x500
+alloc.map.base: dq 0
 
 alloc.init:
 	; assume QEMU/VM always has a sorted map which includes the very lowest addresses
@@ -8,7 +8,7 @@ alloc.init:
 	; do perform a few fixes however:
 	; - immediately reserve all memory below 64K as we and the page table are located there
 	; - round start/end addresses to 4K boundary
-	mov edi, ALLOC.MAP.BASE
+	mov rdi, [alloc.map.base]
 	mov qword [rdi], 1 shl 16
 @@:	mov rax, [rdi]
 	test rax, rax
@@ -27,7 +27,7 @@ alloc.init:
 ;
 ; rdi: base of page
 alloc.page:
-	mov esi, ALLOC.MAP.BASE
+	mov rsi, [alloc.map.base]
 @@:	lodsq
 	test rax, rax
 	js .oom

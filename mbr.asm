@@ -48,14 +48,25 @@ load_partition:
 	mov dl, 0x80
 	int 0x13
 
-disable_pic:
-	log msg_disable_pic
-	cli
-    mov al, 0xff
-    out 0xa1, al
-    out 0x21, al
+	mov cx, 12 / 2
+	mov si, 0x8000
+	mov di, gsboot_magic
+	rep cmpsw
+	jnz err_not_gsboot
 
-	jmp bootloader.base_address
+;use32
+	mov edi, 0x500
+	mov esi, 0x8000
+	add dword [esi + 16], esi
+	add dword [esi + 32], esi
+	add dword [esi + 48], esi
+	jmp dword [esi + 16]
+use16
+
+err_not_gsboot:
+	log msg_err_not_gsboot
+@@:	hlt
+	jmp @b
 
 purge log
 
@@ -85,7 +96,9 @@ msg msg_e810, "loading E810"
 msg msg_partition, "loading first partition"
 msg msg_disable_pic, "disabling PIC"
 msg msg_identity_map, "identity-mapping first 4GiB"
+msg msg_err_not_gsboot, "missing GeneSYS BOOT magic"
 purge msg
+gsboot_magic: db "GeneSYS BOOT"
 
 edd_packet:
 .packet_size: dw 16
@@ -128,7 +141,7 @@ times (0x2000 - $) db 0
 times (0x8000 - $) db 0
 
 gpt.part1:
-file "build/bootloader.bin"
+file "build/root.gsboot"
 
 times (bootloader.required_size - ($ - gpt.part1)) db 0
 assert $ = 0x10000

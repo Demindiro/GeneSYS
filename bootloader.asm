@@ -25,6 +25,10 @@ macro panic {
 org bootloader.base_address
 
 use16
+disable_pic:
+    mov al, 0xff
+    out 0xa1, al
+    out 0x21, al
 identity_map:
 .clear:
 	mov di, 0x1000
@@ -75,10 +79,14 @@ enter_long_mode:
 
 use64
 main:
+	mov [alloc.map.base], rdi
+	mov [gsboot.base], rsi
+
 	call alloc.init
 	call page.init
 	call syscall.init
 	mov rcx, 0x0000400000000000
+	add rcx, [rcx + 48]
 	xor r11, r11
 	sysretq
 	hlt
@@ -223,6 +231,4 @@ acpi.madt: dd 0
 console.lock: db 0
 console.row: db 0
 
-times (bootloader.required_size - ($ - bootloader.base_address)) db 0
-
-assert $ = 0x10000
+gsboot.base: dq 0

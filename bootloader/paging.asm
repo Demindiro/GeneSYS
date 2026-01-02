@@ -12,8 +12,13 @@ PAGE.XD  = 1 shl 63
 
 page.init:
 page.init.user:
+	mov rdi, [gsboot.base]
+	mov rdi, [rdi + 32]
+	or rdi, PAGE.US or PAGE.RW or PAGE.P ; pte
+
+	push rdi
 	call alloc.page
-	mov qword [rdi], page.test or PAGE.US or PAGE.RW or PAGE.P ; pte
+	pop qword [rdi]
 	or rdi, PAGE.US or PAGE.RW or PAGE.P ; pde
 
 	push rdi
@@ -30,12 +35,3 @@ page.init.user:
 	mov qword [rax + 1024], rdi
 
 	ret
-
-
-align 0x1000
-page.test:
-	mov eax, 1
-	syscall
-	xor eax, eax
-	syscall
-	ud2
