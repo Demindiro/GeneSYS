@@ -43,7 +43,7 @@ alloc.page:
 	mov rdi, rdx
 	ret
 .oom:
-	mov esi, msg_oom
+	lea rsi, [msg_oom]
 	jmp panicmsg
 
 msg oom, "out of memory"

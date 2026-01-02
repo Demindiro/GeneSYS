@@ -20,7 +20,7 @@ macro panic {
 }
 
 
-org 0x9000
+org 0x12345678
 use32
 disable_pic:
     mov al, 0xff
@@ -65,14 +65,23 @@ enter_long_mode:
 	mov ebx, cr0
 	or ebx,0x80000001
 	mov cr0, ebx
-	lgdt [gdtr]
+	call @f
+@@:	pop edx
+	add edx, (gdt - @b)
+	mov [edx + (gdtr.ptr - gdt)], edx
+	lgdt [edx + (gdtr - gdt)]
 	mov ax, 0x10
 	mov ss, ax
 	mov ds, ax
 	mov es, ax
 	mov fs, ax
 	mov gs, ax
-	jmp 0x8:main
+	add edx, (main - gdt)
+	lea eax, [esp - 9]
+	mov  byte [eax + 0], 0xea ; far jump
+	mov dword [eax + 1], edx
+	mov  word [eax + 5], 0x8
+	jmp eax
 
 use64
 main:

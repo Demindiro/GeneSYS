@@ -9,4 +9,4 @@ dq 0x00cff3000000ffff ; 0x30, A, RW, S, DPL=3, P, G
 .end:
 gdtr:
 dw gdt.end - gdt - 1
-dq gdt
+.ptr: dq 0 ; fixed up at runtime

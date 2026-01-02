@@ -9,8 +9,9 @@ syscall.init:
 	mov edx, 0x00130008 ; kernel CS = 0x8, kernel SS = 0x10, user CS = 0x20, user SS = 0x18
 	wrmsr
 	mov ecx, MSR.LSTAR
-	mov eax, syscall.entry64 and 0xffffffff
-	mov edx, syscall.entry64 shr 32
+	lea rax, [syscall.entry64]
+	mov rdx, rax
+	shr rdx, 32
 	wrmsr
 	mov ecx, MSR.CSTAR
 	wrmsr
@@ -25,7 +26,7 @@ syscall.entry32:
 	mov r8, rax
 	mov r9, rcx
 	mov r10, r11
-	mov esi, msg_syscall
+	lea rsi, [msg_syscall]
 	call printmsg.ok
 	mov rcx, r9
 	mov r11, r10
