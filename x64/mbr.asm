@@ -1,5 +1,3 @@
-include "config.inc"
-
 org 0x7c00
 
 ;;;
@@ -102,7 +100,7 @@ gsboot_magic: db "GeneSYS BOOT"
 
 edd_packet:
 .packet_size: dw 16
-.sectors: dw kernel.required_size / 512
+.sectors: dw 0x7000 / 512
 .offset: dw 0x8000
 .segment: dw 0xdead ; filled in at runtime
 .lba: dq gpt.part1 shr 9
@@ -143,11 +141,8 @@ times (0x8000 - $) db 0
 gpt.part1:
 file "build/root.gsboot"
 
-times (kernel.required_size - ($ - gpt.part1)) db 0
-assert $ = 0x10000
-
 gpt_alt: gpt_header
-times ((0x1000 - $) and 0xfff) db 0
+times ((-$) and 0xfff) db 0
 
 ; must be at least this long to boot in QEMU
 ; what the fuck do I fucking know this makes no fucking sense

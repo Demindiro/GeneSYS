@@ -1,5 +1,3 @@
-include "config.inc"
-
 macro ifeq x, y, target {
 	cmp x, y
 	je target
@@ -22,8 +20,7 @@ macro panic {
 }
 
 
-org kernel.base_address
-
+org 0x9000
 use16
 disable_pic:
     mov al, 0xff
