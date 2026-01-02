@@ -13,7 +13,9 @@ PAGE.XD  = 1 shl 63
 page.init:
 page.init.user:
 	mov rdi, [gsboot.base]
-	mov rdi, [rdi + 32]
+	mov eax, [rdi + 16]
+	shl rax, 12
+	lea rdi, [rdi + rax + 4096]
 	or rdi, PAGE.US or PAGE.RW or PAGE.P ; pte
 
 	push rdi

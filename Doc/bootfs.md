@@ -26,12 +26,9 @@ Header
 | 12:12 | page size          |
 | 13:13 | (zero)             |
 | 15:14 | architecture ID    |
-| 23:16 | kernel byte offset |
-| 31:24 | kernel byte size   |
-| 39:32 | init byte offset   |
-| 47:40 | init byte size     |
-| 55:48 | aux byte offset    |
-| 63:56 | aux byte size      |
+| 19:16 | kernel page count  |
+| 23:20 | init page count    |
+| 27:24 | aux page count     |
 
 All other bytes *must* be filled with zeros.
 

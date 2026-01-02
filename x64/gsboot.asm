@@ -5,16 +5,17 @@ org 0
 db "GeneSYS BOOT"
 db PAGE_SIZE_P2, 0
 dw 0x8664
-dq kernel, kernel.size
-dq init, init.size
-dq aux, aux.size
-assert $ = 64
+dd kernel.page_count
+dd init.page_count
+dd aux.page_count
+assert $ = 28
+times (PAGE_SIZE - $) db 0
 
 macro object name, path {
 	align PAGE_SIZE
 	name: file path
-	.size = $ - name
-	times ((0 - $) and (PAGE_SIZE - 1)) db 0
+	times ((-$) and (PAGE_SIZE - 1)) db 0
+	.page_count = ($ - name) shr PAGE_SIZE_P2
 }
 object kernel, "build/kernel"
 object init, "build/init"

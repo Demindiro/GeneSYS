@@ -48,6 +48,7 @@ load_partition:
 	rep cmpsw
 	jnz err_not_gsboot
 
+	cli
 	mov eax, 1
 	mov cr0, eax
 	lgdt [gdtr]
@@ -84,10 +85,8 @@ use32
 main32:
 	mov edi, 0x500
 	mov esi, 0x8000
-	add dword [esi + 16], esi
-	add dword [esi + 32], esi
-	add dword [esi + 48], esi
-	jmp dword [esi + 16]
+	lea eax, [esi + 0x1000]
+	jmp eax
 
 
 macro msg label, s {
