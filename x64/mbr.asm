@@ -102,7 +102,7 @@ gsboot_magic: db "GeneSYS BOOT"
 
 edd_packet:
 .packet_size: dw 16
-.sectors: dw bootloader.required_size / 512
+.sectors: dw kernel.required_size / 512
 .offset: dw 0x8000
 .segment: dw 0xdead ; filled in at runtime
 .lba: dq gpt.part1 shr 9
@@ -143,7 +143,7 @@ times (0x8000 - $) db 0
 gpt.part1:
 file "build/root.gsboot"
 
-times (bootloader.required_size - ($ - gpt.part1)) db 0
+times (kernel.required_size - ($ - gpt.part1)) db 0
 assert $ = 0x10000
 
 gpt_alt: gpt_header

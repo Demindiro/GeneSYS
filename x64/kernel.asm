@@ -22,7 +22,7 @@ macro panic {
 }
 
 
-org bootloader.base_address
+org kernel.base_address
 
 use16
 disable_pic:
@@ -206,12 +206,12 @@ macro msg name, s {
 	end:
 }
 
-include "bootloader/gdt.asm"
-include "bootloader/acpi.asm"
-include "bootloader/pci.asm"
-include "bootloader/alloc.asm"
-include "bootloader/paging.asm"
-include "bootloader/syscall.asm"
+include "kernel/gdt.asm"
+include "kernel/acpi.asm"
+include "kernel/pci.asm"
+include "kernel/alloc.asm"
+include "kernel/paging.asm"
+include "kernel/syscall.asm"
 
 msg err_no_rsdp, "failed to find RSDP"
 msg err_no_rsdt, "RSDP does not point to RSDT"
