@@ -85,7 +85,7 @@ use32
 main32:
 	mov edi, 0x500
 	mov esi, 0x8000
-	lea eax, [esi + 0x1000]
+	lea eax, [esi + 28]
 	jmp eax
 
 

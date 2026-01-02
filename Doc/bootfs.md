@@ -30,7 +30,7 @@ Header
 | 23:20 | init page count    |
 | 27:24 | aux page count     |
 
-All other bytes *must* be filled with zeros.
+The kernel entry point follows immediately after the header.
 
 ### Achitecture
 
@@ -38,14 +38,6 @@ All other bytes *must* be filled with zeros.
 
 - ID: `0x8664`
 - page size = 4096
-
-##### Kernel format
-
-| bytes | description        |
-| -----:|:------------------ |
-|  11:0 | "GeneSYS KERN"     |
-
-Program entry starts at offset 12
 
 ##### Init program format
 

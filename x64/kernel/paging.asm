@@ -15,7 +15,7 @@ page.init.user:
 	mov rdi, [gsboot.base]
 	mov eax, [rdi + 16]
 	shl rax, 12
-	lea rdi, [rdi + rax + 4096]
+	add rdi, rax
 	or rdi, PAGE.US or PAGE.RW or PAGE.P ; pte
 
 	push rdi

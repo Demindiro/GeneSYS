@@ -9,14 +9,16 @@ dd kernel.page_count
 dd init.page_count
 dd aux.page_count
 assert $ = 28
-times (PAGE_SIZE - $) db 0
+
+kernel:
+file "build/kernel"
+times ((-$) and (PAGE_SIZE - 1)) db 0
+.page_count = $ shr PAGE_SIZE_P2
 
 macro object name, path {
 	align PAGE_SIZE
 	name: file path
-	times ((-$) and (PAGE_SIZE - 1)) db 0
 	.page_count = ($ - name) shr PAGE_SIZE_P2
 }
-object kernel, "build/kernel"
 object init, "build/init"
 object aux, "build/aux"
