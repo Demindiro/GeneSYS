@@ -1,9 +1,5 @@
 org 0x7c00
 
-;;;
-;;; 16 bit area
-;;;
-
 macro log msg {
 	mov si, msg
 	call println
@@ -52,14 +48,16 @@ load_partition:
 	rep cmpsw
 	jnz err_not_gsboot
 
-;use32
-	mov edi, 0x500
-	mov esi, 0x8000
-	add dword [esi + 16], esi
-	add dword [esi + 32], esi
-	add dword [esi + 48], esi
-	jmp dword [esi + 16]
-use16
+	mov eax, 1
+	mov cr0, eax
+	lgdt [gdtr]
+	mov ax, 0x10
+	mov ss, ax
+	mov ds, ax
+	mov es, ax
+	mov fs, ax
+	mov gs, ax
+	jmp 0x8:main32
 
 err_not_gsboot:
 	log msg_err_not_gsboot
@@ -82,6 +80,15 @@ println:
 	mov si, msg_nl
 	jmp print
 
+use32
+main32:
+	mov edi, 0x500
+	mov esi, 0x8000
+	add dword [esi + 16], esi
+	add dword [esi + 32], esi
+	add dword [esi + 48], esi
+	jmp dword [esi + 16]
+
 
 macro msg label, s {
 	local end
@@ -97,6 +104,15 @@ msg msg_identity_map, "identity-mapping first 4GiB"
 msg msg_err_not_gsboot, "missing GeneSYS BOOT magic"
 purge msg
 gsboot_magic: db "GeneSYS BOOT"
+
+gdt:
+dq 0x0000000000000000
+dq 0x00cf9b000000ffff ; 0x28, A, RW, S, E, DPL=0, P, G
+dq 0x00cf93000000ffff ; 0x30, A, RW, S, DPL=0, P, G
+.end:
+gdtr:
+dw gdt.end - gdt - 1
+dq gdt
 
 edd_packet:
 .packet_size: dw 16
