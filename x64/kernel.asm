@@ -41,14 +41,14 @@ identity_map:
 	; it supposedly has a performance penalty, but whatever :)
 	; it just needs to work
 .tree:
-	mov word [0x1000], 0x2000 or 3 ; P, W
-	mov word [0x2000], 0x3000 or 3 ; P, W
-	mov word [0x2008], 0x4000 or 3 ; P, W
-	mov word [0x2010], 0x5000 or 3 ; P, W
-	mov word [0x2018], 0x6000 or 3 ; P, W
+	mov word [0x1000], 0x2000 or 7 ; P, W, S
+	mov word [0x2000], 0x3000 or 7 ; P, W, S
+	mov word [0x2008], 0x4000 or 7 ; P, W, S
+	mov word [0x2010], 0x5000 or 7 ; P, W, S
+	mov word [0x2018], 0x6000 or 7 ; P, W, S
 	; FIXME is this proper? might cross MTRR boundaries above 4MiB...
 .leaves_2m:
-	mov eax, 0 or 0x83 ; page size, present, write
+	mov eax, 0 or 0x87 ; page size, present, write, user
 	mov di, 0x3000
 @@:	stosd
 	add eax, (1 shl 21)

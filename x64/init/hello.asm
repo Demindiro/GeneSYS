@@ -10,6 +10,8 @@ start:
 	syscall
 	mov eax, 2
 	syscall
+	mov rdi, 0xb8000
+	mov word [rdi], 0xffff
 	xor eax, eax
 	syscall
 	ud2
