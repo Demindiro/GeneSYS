@@ -1,5 +1,7 @@
 org 0x7c00
 
+gsboot_base = 1 shl 20
+
 macro log msg {
 	mov si, msg
 	call println
@@ -47,6 +49,14 @@ load_partition:
 	rep cmpsw
 	jnz err_not_gsboot
 
+	mov si, 0x8000
+	mov edi, gsboot_base
+	mov cx, 0x7000 / 4
+@@:	lodsd
+	mov [edi], eax
+	add edi, 4
+	loop @b
+
 	cli
 	mov eax, 1
 	mov cr0, eax
@@ -83,7 +93,7 @@ println:
 use32
 main32:
 	mov edi, 0x500
-	mov esi, 0x8000
+	mov esi, gsboot_base
 	lea eax, [esi + 28]
 	jmp eax
 
