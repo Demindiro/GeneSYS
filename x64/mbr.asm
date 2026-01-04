@@ -1,5 +1,7 @@
 org 0x7c00
 
+gsboot_base = 1 shl 20
+
 macro log msg {
 	mov si, msg
 	call println
@@ -36,18 +38,49 @@ load_memory_map:
 
 load_partition:
 	log msg_partition
-	mov si, edd_packet
-	mov [edd_packet.segment], ds
-	mov ah, 0x42
-	mov dl, 0x80
-	int 0x13
+	call read_13h
 
-	mov cx, 12 / 2
-	mov si, 0x8000
-	mov di, gsboot_magic
-	rep cmpsw
-	jnz err_not_gsboot
+	cmp dword [0x10000], "Gene"
+	jne err_not_gsboot
+	cmp dword [0x10004], "SYS "
+	jne err_not_gsboot
+	cmp dword [0x10008], "BOOT"
+	jne err_not_gsboot
 
+	mov  cl, [0x1000c]
+	; TODO check if proper page size
+	mov edx, [0x10010]
+	add edx, [0x10014]
+	add edx, [0x10018]
+	sub cl, 9
+	shl edx, cl
+
+.all:
+	mov esi, 0x10000
+	mov edi, gsboot_base
+	mov ecx, (512 / 4) * 127
+@@:	mov eax, [esi]
+	add esi, 4
+	mov [edi], eax
+	add edi, 4
+	loop @b
+	add edi, 127 * 512
+	sub edx, 127
+	js .done
+	add dword [edd_packet.lba], 127
+	push edi
+	push edx
+	call read_13h
+	pop edx
+	pop edi
+	jmp .all
+.done:
+
+adjust_e820:
+	; TODO do a proper scan
+	mov dword [0x500 + 1*16], edi
+
+enter_protected_mode:
 	cli
 	mov eax, 1
 	mov cr0, eax
@@ -81,10 +114,17 @@ println:
 	mov si, msg_nl
 	jmp print
 
+read_13h:
+	mov si, edd_packet
+	mov ah, 0x42
+	mov dl, 0x80
+	int 0x13
+	ret
+
 use32
 main32:
 	mov edi, 0x500
-	mov esi, 0x8000
+	mov esi, gsboot_base
 	lea eax, [esi + 28]
 	jmp eax
 
@@ -98,11 +138,8 @@ macro msg label, s {
 msg_nl: db 2, 13, 10
 msg msg_e810, "loading E810"
 msg msg_partition, "loading first partition"
-msg msg_disable_pic, "disabling PIC"
-msg msg_identity_map, "identity-mapping first 4GiB"
 msg msg_err_not_gsboot, "missing GeneSYS BOOT magic"
 purge msg
-gsboot_magic: db "GeneSYS BOOT"
 
 gdt:
 dq 0x0000000000000000
@@ -115,13 +152,13 @@ dq gdt
 
 edd_packet:
 .packet_size: dw 16
-.sectors: dw 0x7000 / 512
-.offset: dw 0x8000
-.segment: dw 0xdead ; filled in at runtime
+.sectors: dw 127
+.offset: dw 0
+.segment: dw 0x1000 ; 0x10 * 0x1000 = 0x10000 = 64KiB
 .lba: dq gpt.part1 shr 9
 
-
-times (440-($-start)) db 0
+assert $ <= 0x7c00 + 440
+times (440-($-start)) db 0xcc
 mbr:
 db "LMNG", 0, 0
 dd 0x00020000, 0xffffffee, 1, 0xffffffff
@@ -161,4 +198,5 @@ times ((-$) and 0xfff) db 0
 
 ; must be at least this long to boot in QEMU
 ; what the fuck do I fucking know this makes no fucking sense
-times (((1 shl 19) - $) - (1 shl 13) - (1 shl 9) + 1) db 0
+;times (((1 shl 19) - $) - (1 shl 13) - (1 shl 9) + 1) db 0
+times ((1 shl 19) - $) db 0
