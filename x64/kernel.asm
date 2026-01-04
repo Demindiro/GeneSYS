@@ -19,6 +19,9 @@ macro panic {
 	hlt
 }
 
+CR4.PAE   = 1 shl  5
+CR4.PGE   = 1 shl  7
+CR4.PCIDE = 1 shl 17
 
 org 0x12345678
 use32
@@ -56,7 +59,7 @@ identity_map:
 enter_long_mode:
 	mov eax, 0x1000
 	mov cr3, eax
-	mov eax, 010100000b
+	mov eax, CR4.PAE or CR4.PGE or CR4.PCIDE
 	mov cr4, eax
 	mov ecx, 0xc0000080
 	rdmsr
