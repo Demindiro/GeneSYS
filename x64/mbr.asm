@@ -37,7 +37,6 @@ load_memory_map:
 load_partition:
 	log msg_partition
 	mov si, edd_packet
-	mov [edd_packet.segment], ds
 	mov ah, 0x42
 	mov dl, 0x80
 	int 0x13
@@ -117,7 +116,7 @@ edd_packet:
 .packet_size: dw 16
 .sectors: dw 0x7000 / 512
 .offset: dw 0x8000
-.segment: dw 0xdead ; filled in at runtime
+.segment: dw 0
 .lba: dq gpt.part1 shr 9
 
 
