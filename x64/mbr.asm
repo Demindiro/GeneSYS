@@ -43,16 +43,18 @@ load_partition:
 	mov dl, 0x80
 	int 0x13
 
-	mov cx, 12 / 2
-	mov si, 0x8000
-	mov di, gsboot_magic
-	rep cmpsw
-	jnz err_not_gsboot
+	cmp dword [0x10000], "Gene"
+	jne err_not_gsboot
+	cmp dword [0x10004], "SYS "
+	jne err_not_gsboot
+	cmp dword [0x10008], "BOOT"
+	jne err_not_gsboot
 
-	mov si, 0x8000
+	mov esi, 0x10000
 	mov edi, gsboot_base
-	mov cx, 0x7000 / 4
-@@:	lodsd
+	mov ecx, 0x7000 / 4
+@@:	mov eax, [esi]
+	add esi, 4
 	mov [edi], eax
 	add edi, 4
 	loop @b
@@ -111,7 +113,6 @@ msg msg_disable_pic, "disabling PIC"
 msg msg_identity_map, "identity-mapping first 4GiB"
 msg msg_err_not_gsboot, "missing GeneSYS BOOT magic"
 purge msg
-gsboot_magic: db "GeneSYS BOOT"
 
 gdt:
 dq 0x0000000000000000
@@ -125,8 +126,8 @@ dq gdt
 edd_packet:
 .packet_size: dw 16
 .sectors: dw 0x7000 / 512
-.offset: dw 0x8000
-.segment: dw 0
+.offset: dw 0
+.segment: dw 0x1000 ; 0x10 * 0x1000 = 0x10000 = 64KiB
 .lba: dq gpt.part1 shr 9
 
 
