@@ -77,8 +77,7 @@ macro print string {
 	;   IN EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *This
 	;   IN CHAR16 *String
 	; );
-	mov rdx, [rsp]
-	mov rcx, [rdx + EFI_SYSTEM_TABLE.ConOut]
+	mov rcx, [r15 + EFI_SYSTEM_TABLE.ConOut]
 	lea rdx, [string]
 	eficall qword [rcx + EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL.OutputString]
 }
@@ -86,10 +85,9 @@ macro print string {
 ; rcx: EFI_HANDLE (of ourselves, just ignore)
 ; rdx: EFI_SYSTEM_TABLE*
 start:
-	push rbp
-	mov rbp, rsp
+	; r15 => System table
+	mov r15, rdx
 	push rcx
-	push rdx
 
 	print hello_uefi
 	print hello_uefi
