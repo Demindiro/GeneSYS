@@ -63,6 +63,14 @@ EFI_SYSTEM_TABLE.ConOut           = 64 ; EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL
 EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL.Reset        = 0 ; EFI_TEXT_RESET
 EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL.OutputString = 8 ; EFI_TEXT_STRING
 
+; "fast"call my ass
+; (don't make it more complicated, please)
+macro eficall target {
+	sub rsp, 32
+	call target
+	add rsp, 32
+}
+
 macro print string {
 	; 12.4.3
 	; typedef EFI_STATUS (EFIAPI *EFI_TEXT_STRING) (
@@ -72,9 +80,7 @@ macro print string {
 	mov rdx, [rsp]
 	mov rcx, [rdx + EFI_SYSTEM_TABLE.ConOut]
 	lea rdx, [string]
-	sub rsp, 32
-	call qword [rcx + EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL.OutputString]
-	add rsp, 32
+	eficall qword [rcx + EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL.OutputString]
 }
 
 ; rcx: EFI_HANDLE (of ourselves, just ignore)
