@@ -108,6 +108,9 @@ COMx.stat_line   = 5
 COMx.stat_modem  = 6
 COMx.scratch     = 7
 
+COMx.STAT_LINE.DR   = 1 shl 0
+COMx.STAT_LINE.THRE = 1 shl 5
+
 com1:
 macro outbi val {
 	mov al, val
@@ -157,12 +160,10 @@ macro outbi val {
 
 .loop:
 	mov dx, COM1.IOBASE + COMx.tx
-	outbi 0
-	outbi 0
-	outbi 0
-	outbi 0
 	outbi 0x55
-	pause ; probably does nothing but...
+@@:	in al, dx
+	test al, COMx.STAT_LINE.DR
+	jz @b
 	jmp .loop
 
 .halt:
