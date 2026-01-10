@@ -185,7 +185,11 @@ start:
 	mov ecx, 12
 	call uefi.println
 
+	mov ecx, 1 shl 14
+	sub rsp, rcx
+	mov rdx, rsp
 	call uefi.get_memory_map
+	add rsp, 1 shl 14
 
 	; 7.4.6 EFI_BOOT_SERVICES.ExitBootServices()
 	; EFI_STATUS (EFIAPI *EFI_EXIT_BOOT_SERVICES) (
@@ -265,6 +269,9 @@ uefi._panic:
 	hlt
 	jmp @b
 
+; rdx: memory map base
+; rcx: memory map capacity
+;
 ; rax: => status
 ; rdi: => descriptor version
 ; rcx: => descriptor size
@@ -281,10 +288,8 @@ uefi.get_memory_map:
 	;   OUT UINT32 *DescriptorVersion
 	; );
 	uefi.trace "GetMemoryMap + ExitBootServices" ; no tracing or any UEFI routines between these two calls!
-	sub rsp, 1 shl 14
-	mov rdx, rsp  ; MemoryMap
 	push rbp      ; align (one stack arg)
-	push 1 shl 14
+	push rcx      ; *MemoryMapSize
 	mov rcx, rsp  ; MemoryMapSize
 	push rax
 	mov r8, rsp   ; MapKey
@@ -300,7 +305,6 @@ uefi.get_memory_map:
 	pop rdx ; *MapKey
 	pop rbx ; *MemoryMapSize
 	pop rbp ; align
-	add rsp, 1 shl 14 ; MemoryMap
 	pop rbp
 	ret
 
