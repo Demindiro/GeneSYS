@@ -215,8 +215,16 @@ start:
 
 ; rsi: prefixed string base
 uefi._trace:
+	push rax
+	push rcx
+	push rdx
 	lodsb
 	movzx ecx, al
+	call uefi.println
+	pop rdx
+	pop rcx
+	pop rax
+	ret
 ; rsi: string base
 ; rcx: string length
 uefi.println:
