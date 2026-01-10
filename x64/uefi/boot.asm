@@ -185,35 +185,7 @@ start:
 	mov ecx, 12
 	call uefi.println
 
-	; 7.2.3 EFI_BOOT_SERVICES.GetMemoryMap()
-	; typedef EFI_STATUS (EFIAPI *EFI_GET_MEMORY_MAP) (
-	;   IN OUT UINTN *MemoryMapSize,
-	;   OUT EFI_MEMORY_DESCRIPTOR *MemoryMap,
-	;   OUT UINTN *MapKey,
-	;   OUT UINTN *DescriptorSize,
-	;   OUT UINT32 *DescriptorVersion
-	; );
-	uefi.trace "GetMemoryMap + ExitBootServices" ; no tracing or any UEFI routines between these two calls!
-	sub rsp, 1 shl 14
-	mov rdx, rsp  ; MemoryMap
-	push rax      ; align (one stack arg)
-	push 1 shl 14
-	mov rcx, rsp  ; MemoryMapSize
-	push rax
-	mov r8, rsp   ; MapKey
-	push rax
-	mov r9, rsp   ; DescriptorSize
-	push rax
-	push rsp      ; DescriptorVersion
-	eficall qword [r14 + EFI_BOOT_SERVICES.GetMemoryMap]
-	uefi.assertgez rax, "GetMemoryMap failed"
-	pop rax ; DescriptorVersion
-	pop rdi ; *DescriptorVersion
-	pop rcx ; *DescriptorSize
-	pop rdx ; *MapKey
-	pop rbx ; *MemoryMapSize
-	pop rax ; align
-	add rsp, 1 shl 14 ; MemoryMap
+	call uefi.get_memory_map
 
 	; 7.4.6 EFI_BOOT_SERVICES.ExitBootServices()
 	; EFI_STATUS (EFIAPI *EFI_EXIT_BOOT_SERVICES) (
@@ -284,6 +256,45 @@ uefi._panic:
 @@:	cli
 	hlt
 	jmp @b
+
+; rax: => status
+; rdi: => descriptor version
+; rcx: => descriptor size
+; rdx: => map key (for ExitBootServices)
+; rbx: => memory map size
+uefi.get_memory_map:
+	push rbp
+	; 7.2.3 EFI_BOOT_SERVICES.GetMemoryMap()
+	; typedef EFI_STATUS (EFIAPI *EFI_GET_MEMORY_MAP) (
+	;   IN OUT UINTN *MemoryMapSize,
+	;   OUT EFI_MEMORY_DESCRIPTOR *MemoryMap,
+	;   OUT UINTN *MapKey,
+	;   OUT UINTN *DescriptorSize,
+	;   OUT UINT32 *DescriptorVersion
+	; );
+	uefi.trace "GetMemoryMap + ExitBootServices" ; no tracing or any UEFI routines between these two calls!
+	sub rsp, 1 shl 14
+	mov rdx, rsp  ; MemoryMap
+	push rbp      ; align (one stack arg)
+	push 1 shl 14
+	mov rcx, rsp  ; MemoryMapSize
+	push rax
+	mov r8, rsp   ; MapKey
+	push rax
+	mov r9, rsp   ; DescriptorSize
+	push rax
+	push rsp      ; DescriptorVersion
+	eficall qword [r14 + EFI_BOOT_SERVICES.GetMemoryMap]
+	uefi.assertgez rax, "GetMemoryMap failed"
+	pop rdi ; DescriptorVersion
+	pop rdi ; *DescriptorVersion
+	pop rcx ; *DescriptorSize
+	pop rdx ; *MapKey
+	pop rbx ; *MemoryMapSize
+	pop rbp ; align
+	add rsp, 1 shl 14 ; MemoryMap
+	pop rbp
+	ret
 
 uefi.println._crlf: db 13, 10
 hello_uefi: db "Hello, UEFI!"
