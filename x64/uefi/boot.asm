@@ -263,21 +263,7 @@ end if
 	eficall qword [r14 + EFI_BOOT_SERVICES.ExitBootServices]
 	uefi.assertgez rax, "ExitBootServices failed"
 
-	cli
-	mov edx, COM1.IOBASE
-	call comx.init
-@@:	mov rsi, rsp
-	mov ecx, 1
-	call comx.read
-	mov rdi, rsp
-	mov ebx, ecx
-	mov ecx, 1
-	sub ecx, ebx
-	call comx.write
-	jmp @b
-
-@@:	hlt
-	jmp @b
+	jmp boot.start
 
 ; rsi: prefixed string base
 uefi._trace:
@@ -377,7 +363,11 @@ match y,rodata._list { irp x,y { x } }
 ;efi_invalid_parameter: dq (1 shl 63) or 2
 efi_buffer_too_small:  dq (1 shl 63) or 5
 
-include "../common/comx.asm"
+; TODO avoid hardcoded path
+;boot.start = -(1 shl 21) - (1 shl 12)
+boot.start:
+file "../../build/uefi/kernel.bin"
+;include "../common/boot.asm"
 
 times ((-$) and 0xfff) db 0
 

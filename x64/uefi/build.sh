@@ -2,6 +2,8 @@
 src="$(dirname "$0")"
 set -xe
 mkdir -p $out/
+
+fasm $src/../common/boot.asm $out/kernel.bin
 fasm $src/boot.asm $out/bootx64.efi
 
 
