@@ -50,14 +50,82 @@ EFI_HANDLE.sizeof = 8 ; VOID*
 EFI_TABLE_HEADER.sizeof = 8 + (4 * 4)
 
 ; 4.3.1
-EFI_SYSTEM_TABLE.Hdr              = 0 ; EFI_TABLE_HEADER
-EFI_SYSTEM_TABLE.FirmwareVendor   = 24 ; CHAR16
-EFI_SYSTEM_TABLE.FirmwareRevision = 32 ; UINT32
-EFI_SYSTEM_TABLE.ConsoleInHandle  = 40 ; EFI_HANDLE
-EFI_SYSTEM_TABLE.ConIn            = 48 ; EFI_SIMPLE_TEXT_INPUT_PROTOCOL
-EFI_SYSTEM_TABLE.ConsoleOutHandle = 56 ; EFI_HANDLE
-EFI_SYSTEM_TABLE.ConOut           = 64 ; EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL
-; there's more but idc
+EFI_SYSTEM_TABLE.Hdr                  = 0 ; EFI_TABLE_HEADER
+EFI_SYSTEM_TABLE.FirmwareVendor       = 24 ; CHAR16 *
+EFI_SYSTEM_TABLE.FirmwareRevision     = 32 ; UINT32
+EFI_SYSTEM_TABLE.ConsoleInHandle      = 40 ; EFI_HANDLE
+EFI_SYSTEM_TABLE.ConIn                = 48 ; EFI_SIMPLE_TEXT_INPUT_PROTOCOL *
+EFI_SYSTEM_TABLE.ConsoleOutHandle     = 56 ; EFI_HANDLE
+EFI_SYSTEM_TABLE.ConOut               = 64 ; EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *
+EFI_SYSTEM_TABLE.StandardErrorHandle  = 72 ; EFI_HANDLE
+EFI_SYSTEM_TABLE.StdErr               = 80 ; EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *
+EFI_SYSTEM_TABLE.RuntimeServices      = 88 ; EFI_RUNTIME_SERVICES *
+EFI_SYSTEM_TABLE.BootServices         = 96 ; EFI_BOOT_SERVICES *
+EFI_SYSTEM_TABLE.NumberOfTableEntries = 104 ; UINTN
+EFI_SYSTEM_TABLE.ConfigurationTable   = 112 ; EFI_CONFIGURATION_TABLE *
+
+; 4.4.1
+EFI_BOOT_SERVICES.Hdr = 0
+x = 24
+macro f name {
+	EFI_BOOT_SERVICES.#name = x
+	x = x + 8
+}
+; Task priority
+f RaiseTpl
+f RestoreTpl
+; Memory
+f AllocatePages
+f FreePages
+f GetMemoryMap
+f AllocatePool
+f FreePool
+; Event & Timer
+f CreateEvent
+f SetTimer
+f WaitForEvent
+f SignalEvent
+f CloseEvent
+f CheckEvent
+; Protocol handler
+f InstallProtocolInterface
+f ReinstallProtocolInterface
+f UninstallProtocolInterface
+f HandleProtocol
+f Reserved
+f RegisterProtocolNotify
+f LocateHandle
+f LocateDevicePath
+f InstallConfigurationTable
+; Image Services
+f LoadImage
+f StartImage
+f Exit
+f UnloadImage
+f ExitBootServices
+; Miscellaneous Services
+f GetNextMonotonicCount
+f Stall
+f SetWatchdogTimer
+; DriverSupport Services
+f ConnectController     ; EFI 1.1+
+f DisconnectController  ; EFI 1.1+
+; Open and Close Protocol
+f OpenProtocol             ; EFI 1.1+
+f CloseProtocol            ; EFI 1.1+
+f OpenProtocolInformation  ; EFI 1.1+
+; Library
+f ProtocolsPerHandle  ; EFI 1.1+
+f LocateHandleBuffer  ; EFI 1.1+
+f LocateProtocol      ; EFI 1.1+
+f InstallMultipleProtocolInterfaces   ; EFI 1.1+
+f UninstallMultipleProtocolInterfaces ; EFI 1.1+
+; 32-bit CRC Services
+f CalculateCrc32  ; EFI 1.1+
+; Miscellaneous Services
+f CopyMem         ; EFI 1.1+
+f SetMem          ; EFI 1.1+
+f CreateEventEx   ; UEFI 2.0+
 
 ; 12.4.1
 EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL.Reset        = 0 ; EFI_TEXT_RESET
@@ -102,18 +170,60 @@ macro eficall target {
 	add rsp, 32
 }
 
-; rcx: EFI_HANDLE (of ourselves, just ignore)
+; rcx: EFI_HANDLE (of ourselves)
 ; rdx: EFI_SYSTEM_TABLE*
 start:
+	push rbp
 	; r15 => System table
 	; r14 => BootServices
 	mov r15, rdx
 	mov r14, [r15 + EFI_SYSTEM_TABLE.BootServices]
 	push rcx
+	push rcx
 
 	lea rsi, [hello_uefi]
 	mov ecx, 12
 	call uefi.println
+
+	; 7.2.3 EFI_BOOT_SERVICES.GetMemoryMap()
+	; typedef EFI_STATUS (EFIAPI *EFI_GET_MEMORY_MAP) (
+	;   IN OUT UINTN *MemoryMapSize,
+	;   OUT EFI_MEMORY_DESCRIPTOR *MemoryMap,
+	;   OUT UINTN *MapKey,
+	;   OUT UINTN *DescriptorSize,
+	;   OUT UINT32 *DescriptorVersion
+	; );
+	uefi.trace "GetMemoryMap + ExitBootServices" ; no tracing or any UEFI routines between these two calls!
+	sub rsp, 1 shl 14
+	mov rdx, rsp  ; MemoryMap
+	push rax      ; align (one stack arg)
+	push 1 shl 14
+	mov rcx, rsp  ; MemoryMapSize
+	push rax
+	mov r8, rsp   ; MapKey
+	push rax
+	mov r9, rsp   ; DescriptorSize
+	push rax
+	push rsp      ; DescriptorVersion
+	eficall qword [r14 + EFI_BOOT_SERVICES.GetMemoryMap]
+	uefi.assertgez rax, "GetMemoryMap failed"
+	pop rax ; DescriptorVersion
+	pop rdi ; *DescriptorVersion
+	pop rcx ; *DescriptorSize
+	pop rdx ; *MapKey
+	pop rbx ; *MemoryMapSize
+	pop rax ; align
+	add rsp, 1 shl 14 ; MemoryMap
+
+	; 7.4.6 EFI_BOOT_SERVICES.ExitBootServices()
+	; EFI_STATUS (EFIAPI *EFI_EXIT_BOOT_SERVICES) (
+	;   IN EFI_HANDLE ImageHandle,
+	;   IN UINTN MapKey
+	; );
+	pop rcx
+	pop rcx
+	eficall qword [r14 + EFI_BOOT_SERVICES.ExitBootServices]
+	uefi.assertgez rax, "ExitBootServices failed"
 
 	cli
 	mov edx, COM1.IOBASE
