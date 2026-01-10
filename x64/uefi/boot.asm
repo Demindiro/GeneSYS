@@ -63,6 +63,37 @@ EFI_SYSTEM_TABLE.ConOut           = 64 ; EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL
 EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL.Reset        = 0 ; EFI_TEXT_RESET
 EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL.OutputString = 8 ; EFI_TEXT_STRING
 
+
+; https://board.flatassembler.net/topic.php?t=8619
+rodata._list equ
+macro rodata {
+	local x
+	rodata._list equ rodata._list,x
+	macro x
+}
+
+macro uefi._tracemsg lbl, str {
+	rodata
+	\{
+		local e
+		lbl: db e - $, str
+		e:
+	\}
+}
+macro uefi.trace str {
+	local t
+	uefi._tracemsg t, str
+	lea rsi, [t]
+	call uefi._trace
+}
+macro uefi.assertgez reg, msg {
+	local t
+	uefi._tracemsg t, msg
+	lea rsi, [t]
+	test reg, reg
+	jl uefi._panic
+}
+
 ; "fast"call my ass
 ; (don't make it more complicated, please)
 macro eficall target {
@@ -71,28 +102,18 @@ macro eficall target {
 	add rsp, 32
 }
 
-macro print string {
-	; 12.4.3
-	; typedef EFI_STATUS (EFIAPI *EFI_TEXT_STRING) (
-	;   IN EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *This
-	;   IN CHAR16 *String
-	; );
-	mov rcx, [r15 + EFI_SYSTEM_TABLE.ConOut]
-	lea rdx, [string]
-	eficall qword [rcx + EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL.OutputString]
-}
-
 ; rcx: EFI_HANDLE (of ourselves, just ignore)
 ; rdx: EFI_SYSTEM_TABLE*
 start:
 	; r15 => System table
+	; r14 => BootServices
 	mov r15, rdx
+	mov r14, [r15 + EFI_SYSTEM_TABLE.BootServices]
 	push rcx
 
-	print hello_uefi
-	print hello_uefi
-	print hello_uefi
-	print hello_uefi
+	lea rsi, [hello_uefi]
+	mov ecx, 12
+	call uefi.println
 
 	cli
 	mov edx, COM1.IOBASE
@@ -110,9 +131,55 @@ start:
 @@:	hlt
 	jmp @b
 
-include "../common/comx.asm"
+; rsi: prefixed string base
+uefi._trace:
+	lodsb
+	movzx ecx, al
+; rsi: string base
+; rcx: string length
+uefi.println:
+	push rbp
+	call uefi.print
+	pop rbp
+	lea rsi, [uefi.println._crlf]
+	mov ecx, 2
+; rsi: string base
+; rcx: string length
+uefi.print:
+	push rbp
+	; TODO length checking
+	sub rsp, 1024
+	lea rdi, [rsp + 32]
+	mov rdx, rdi
+	mov ah, 0
+@@:	lodsb
+	stosw
+	loop @b
+	xor eax, eax
+	stosd
+	; 12.4.3
+	; typedef EFI_STATUS (EFIAPI *EFI_TEXT_STRING) (
+	;   IN EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *This
+	;   IN CHAR16 *String
+	; );
+	mov rcx, [r15 + EFI_SYSTEM_TABLE.ConOut]
+	lea rdx, [rsp + 32]
+	call qword [rcx + EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL.OutputString]
+	add rsp, 1024
+	pop rbp
+	ret
 
-hello_uefi: dw 'H', 'e', 'l', 'l', 'o', ' ', 'U', 'E', 'F', 'I', '!', 13, 10, 0
+uefi._panic:
+	call uefi._trace
+@@:	cli
+	hlt
+	jmp @b
+
+uefi.println._crlf: db 13, 10
+hello_uefi: db "Hello, UEFI!"
+match y,rodata._list { irp x,y { x } }
+
+include "../common/comx.asm"
 
 times ((-$) and 0xfff) db 0
 
