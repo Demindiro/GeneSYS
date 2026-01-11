@@ -319,7 +319,7 @@ start:
 @@:
 
 	; attempt stack alloc to simplify things
-	; we have at least 64KiB, use 3/4 of that
+	; we have at least 128KiB, use 3/8 of that
 	; ... this does make the earlier call redundant,
 	; but it will be easier to switch to heap alloc, so keep it.
 	uefi._tracemsg start.err_memmap_too_large, "GetMemoryMap (size only) too large"
