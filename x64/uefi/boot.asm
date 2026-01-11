@@ -134,6 +134,11 @@ macro f name {
 	name = x
 	x = x + 1
 }
+f AllocateAnyPages
+f AllocateMaxAddress
+f AllocateAddress
+f MaxAllocateType
+x = 0
 f EfiReservedMemoryType
 f EfiLoaderCode
 f EfiLoaderData
@@ -164,6 +169,21 @@ EFI_MEMORY_DESCRIPTOR.Attribute     = 32
 EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL.Reset        = 0 ; EFI_TEXT_RESET
 EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL.OutputString = 8 ; EFI_TEXT_STRING
 
+
+PAGE.P   =  1 shl  0
+PAGE.RW  =  1 shl  1
+PAGE.US  =  1 shl  2
+PAGE.PWT =  1 shl  3
+PAGE.PCD =  1 shl  4
+PAGE.A   =  1 shl  5
+PAGE.D   =  1 shl  6
+;PAGE.PAT =  1 shl  7   ; either 7 or 12...
+PAGE.PS  =  1 shl  7
+PAGE.G   =  1 shl  8
+PAGE.XD  =  1 shl 63
+
+CR4.PGE     =  1 shl  7
+CR4.PCID    =  1 shl 17
 
 ; https://board.flatassembler.net/topic.php?t=8619
 rodata._list equ
@@ -209,6 +229,7 @@ start:
 	push rbp
 	; r15 => System table
 	; r14 => BootServices
+	; r13 => CR3
 	; r12 => handle
 	mov r15, rdx
 	mov r14, [r15 + EFI_SYSTEM_TABLE.BootServices]
@@ -217,6 +238,74 @@ start:
 	lea rsi, [hello_uefi]
 	mov ecx, 12
 	call uefi.println
+
+	uefi.trace "allocate kernel code/data"
+	; 7.2.1 EFI_BOOT_SERVICES.AllocatePages()
+	; typedef EFI_STATUS (EFIAPI *EFI_ALLOCATE_PAGES) (
+	;   IN EFI_ALLOCATE_TYPE Type,
+	;   IN EFI_MEMORY_TYPE MemoryType,
+	;   IN UINTN Pages,
+	;   IN OUT EFI_PHYSICAL_ADDRESS *Memory
+	; );
+	mov ecx, AllocateAnyPages
+	mov edx, EfiLoaderData
+	; allocate 6M, then round up to 2M boundary,
+	; leaving us with at least 4M of available memory.
+	mov r8, 3 shl (21 - 12) ; *page* count, not bytes :)
+	push rax ; base
+	mov r9, rsp
+	push rax ; align stack
+	eficall qword [r14 + EFI_BOOT_SERVICES.AllocatePages]
+	uefi.assertgez rax, "heap allocation failed"
+
+	uefi.trace "mapping kernel"
+	pop rax  ; align stack
+	pop rdi  ; base
+
+	; align to 2M
+	add rdi, not (-1 shl 21)
+	and rdi,     (-1 shl 21)
+
+	; code
+	lea rsi, [kernel.header.end]
+	mov ecx, [kernel.exec.size]
+	rep movsb
+	mov ecx, edi
+	neg ecx
+	and ecx, not (-1 shl 21)
+	xor eax, eax
+	rep stosb
+
+	; data
+	mov ecx, [kernel.data.size]
+	rep movsb
+	mov ecx, edi
+	neg ecx
+	and ecx, not (-1 shl 21)
+	mov edx, 1 shl 21
+	cmp dword [kernel.data.size], 0
+	cmove ecx, edx ; if data.size == 0 then ecx = 2M
+	rep stosb
+
+	; PD: 0 -> code, 7 -> data
+	lea rax, [rdi - (2 shl 21) + PAGE.P + PAGE.PS + PAGE.G]
+	lea rdx, [rdi - (1 shl 21) + PAGE.P + PAGE.PS + PAGE.G + PAGE.RW]
+	;lea rax, [rdi - (2 shl 21) + PAGE.P + PAGE.PS]
+	;lea rdx, [rdi - (1 shl 21) + PAGE.P + PAGE.PS + PAGE.RW]
+	mov [rdi - 0x1000 + (8*0)], rax
+	mov [rdi - 0x1000 + (8*7)], rdx
+	; PDP: 511
+	lea rax, [rdi - 0x1000 + PAGE.P + PAGE.RW]
+	mov [rdi - 0x2000 + (511*8)], rax
+	; PML4: 511
+	lea rax, [rdi - 0x2000 + PAGE.P + PAGE.RW]
+	mov [rdi - 0x3000 + (511*8)], rax
+	; identity map
+	mov rsi, cr3
+	sub rdi, 0x3000
+	mov r13, rdi
+	mov ecx, 256
+	rep movsq
 
 	uefi.trace "GetMemoryMap (size only)"
 	xor ecx, ecx
@@ -263,7 +352,23 @@ end if
 	eficall qword [r14 + EFI_BOOT_SERVICES.ExitBootServices]
 	uefi.assertgez rax, "ExitBootServices failed"
 
-	jmp boot.start
+	; enter kernel
+	cli
+	mov cr3, r13
+	lgdt [kernel.gdtr]
+	mov ax, KERNEL.GDT.KERNEL_SS
+	mov ds, ax
+	mov es, ax
+	mov ss, ax
+	mov fs, ax
+	mov gs, ax
+	lea rax, [@f]
+	push KERNEL.GDT.KERNEL_CS
+	push rax
+	retfq
+@@:	lidt [kernel.idtr]
+	mov rbp, kernel.start
+	jmp rbp
 
 ; rsi: prefixed string base
 uefi._trace:
@@ -354,6 +459,7 @@ uefi.get_memory_map:
 	pop rbp
 	ret
 
+
 uefi.println._crlf: db 13, 10
 hello_uefi: db "Hello, UEFI!"
 match y,rodata._list { irp x,y { x } }
@@ -362,12 +468,22 @@ match y,rodata._list { irp x,y { x } }
 ; thanks for making them 64-bit...
 ;efi_invalid_parameter: dq (1 shl 63) or 2
 efi_buffer_too_small:  dq (1 shl 63) or 5
+;efi_out_of_resources:  dq (1 shl 63) or 9
 
 ; TODO avoid hardcoded path
-;boot.start = -(1 shl 21) - (1 shl 12)
-boot.start:
-file "../../build/uefi/kernel.bin"
-;include "../common/boot.asm"
+kernel.start = 0xffffffffc0000000
+kernel.magic      = kernel +  0
+kernel.exec.size  = kernel +  8
+kernel.data.size  = kernel + 12
+kernel.idtr       = kernel + 16
+kernel.gdtr       = kernel + 26
+kernel._reserved  = kernel + 36
+kernel.header.end = kernel + 64
+KERNEL.GDT.KERNEL_CS = 0x08
+KERNEL.GDT.KERNEL_SS = 0x10
+align 64
+kernel: file "../../build/uefi/kernel.bin"
+.end:
 
 times ((-$) and 0xfff) db 0
 
