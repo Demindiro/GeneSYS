@@ -170,6 +170,11 @@ EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL.Reset        = 0 ; EFI_TEXT_RESET
 EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL.OutputString = 8 ; EFI_TEXT_STRING
 
 
+efi_invalid_parameter = (1 shl 63) or 2
+efi_buffer_too_small  = (1 shl 63) or 5
+efi_out_of_resources  = (1 shl 63) or 9
+
+
 PAGE.P   =  1 shl  0
 PAGE.RW  =  1 shl  1
 PAGE.US  =  1 shl  2
@@ -307,31 +312,36 @@ start:
 	mov ecx, 256
 	rep movsq
 
-	uefi.trace "GetMemoryMap (size only)"
-	xor ecx, ecx
-	call uefi.get_memory_map
-	cmp rax, [efi_buffer_too_small]
-	je @f
-	uefi._tracemsg start.err_memmapsize, "GetMemoryMap (size only) failed"
-	lea rsi, [start.err_memmapsize]
-	test rax, rax
-	jl uefi._panic
-@@:
-
-	; attempt stack alloc to simplify things
-	; we have at least 128KiB, use 3/8 of that
-	; ... this does make the earlier call redundant,
-	; but it will be easier to switch to heap alloc, so keep it.
-	uefi._tracemsg start.err_memmap_too_large, "GetMemoryMap (size only) too large"
-	lea rsi, [start.err_memmap_too_large]
-	cmp rcx, (1 shl 15) + (1 shl 14)
-	ja uefi._panic
-	sub rsp, (1 shl 15) + (1 shl 14)
-
 	uefi.trace "GetMemoryMap + ExitBootServices" ; no tracing or any UEFI routines between these two calls!
-	mov rdx, rsp
-	call uefi.get_memory_map
+	; attempt stack alloc to simplify things
+	; we have at least 128KiB, use half of that
+	; ... which surely is enough, right?
+	mov ecx, 1 shl 16
+	sub rsp, rcx
+	; 7.2.3 EFI_BOOT_SERVICES.GetMemoryMap()
+	; typedef EFI_STATUS (EFIAPI *EFI_GET_MEMORY_MAP) (
+	;   IN OUT UINTN *MemoryMapSize,
+	;   OUT EFI_MEMORY_DESCRIPTOR *MemoryMap,
+	;   OUT UINTN *MapKey,
+	;   OUT UINTN *DescriptorSize,
+	;   OUT UINT32 *DescriptorVersion
+	; );
+	mov rdx, rsp        ; MemoryMap
+	push rax            ; align
+	push rcx            ; *MemoryMapSize
+	mov rcx, rsp        ; MemoryMapSize
+	sub rsp, 24
+	lea r8, [rsp + 16]  ; MapKey
+	lea r9, [rsp +  8]  ; DescriptorSize
+	push rsp            ; DescriptorVersion
+	eficall qword [r14 + EFI_BOOT_SERVICES.GetMemoryMap]
 	uefi.assertgez rax, "GetMemoryMap failed"
+	pop rax  ; DescriptorVersion  (ignore)
+	pop rax  ; *DescriptorVersion (ignore)
+	pop rbx  ; *DescriptorSize
+	pop rdx  ; *MapKey
+	pop rcx  ; *MemoryMapSize
+	pop rax  ; align
 
 if 0 ; TODO
 	; convert to simpler memory mapping
@@ -422,53 +432,10 @@ uefi._panic:
 	hlt
 	jmp @b
 
-; rdx: memory map base
-; rcx: memory map capacity
-;
-; rax: => status
-; rdi: => descriptor version
-; rbx: => descriptor size
-; rdx: => map key (for ExitBootServices)
-; rcx: => memory map size
-uefi.get_memory_map:
-	push rbp
-	; 7.2.3 EFI_BOOT_SERVICES.GetMemoryMap()
-	; typedef EFI_STATUS (EFIAPI *EFI_GET_MEMORY_MAP) (
-	;   IN OUT UINTN *MemoryMapSize,
-	;   OUT EFI_MEMORY_DESCRIPTOR *MemoryMap,
-	;   OUT UINTN *MapKey,
-	;   OUT UINTN *DescriptorSize,
-	;   OUT UINT32 *DescriptorVersion
-	; );
-	push rbp      ; align (one stack arg)
-	push rcx      ; *MemoryMapSize
-	mov rcx, rsp  ; MemoryMapSize
-	push rax
-	mov r8, rsp   ; MapKey
-	push rax
-	mov r9, rsp   ; DescriptorSize
-	push rax
-	push rsp      ; DescriptorVersion
-	eficall qword [r14 + EFI_BOOT_SERVICES.GetMemoryMap]
-	pop rdi ; DescriptorVersion
-	pop rdi ; *DescriptorVersion
-	pop rbx ; *DescriptorSize
-	pop rdx ; *MapKey
-	pop rcx ; *MemoryMapSize
-	pop rbp ; align
-	pop rbp
-	ret
-
 
 uefi.println._crlf: db 13, 10
 hello_uefi: db "Hello, UEFI!"
 match y,rodata._list { irp x,y { x } }
-
-; UEFI status codes are totally dumb
-; thanks for making them 64-bit...
-;efi_invalid_parameter: dq (1 shl 63) or 2
-efi_buffer_too_small:  dq (1 shl 63) or 5
-;efi_out_of_resources:  dq (1 shl 63) or 9
 
 ; TODO avoid hardcoded path
 kernel.start = 0xffffffffc0000000
