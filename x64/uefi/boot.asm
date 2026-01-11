@@ -381,6 +381,8 @@ end if
 	jmp rbp
 
 ; rsi: prefixed string base
+;
+; preserved: rax, rcx, rdx, rbx, rdi
 uefi._trace:
 	push rax
 	push rcx
