@@ -140,10 +140,12 @@ f AllocateAddress
 f MaxAllocateType
 x = 0
 f EfiReservedMemoryType
+usable_memory_types.0.start = x
 f EfiLoaderCode
 f EfiLoaderData
 f EfiBootServicesCode
 f EfiBootServicesData
+usable_memory_types.0.end = x
 f EfiRuntimeServicesCode
 f EfiRuntimeServicesData
 f EfiConventionalMemory
@@ -343,21 +345,38 @@ start:
 	pop rcx  ; *MemoryMapSize
 	pop rax  ; align
 
-if 0 ; TODO
-	; convert to simpler memory mapping
-	mov rsi, rsp
-	mov rdi, rsp
-	lea rdi, [rsi + rcx]
-@@:
-	sub rcx, rbx
-	jnz @b
-end if
+	push rdx
+.copy_memmap:
+	mov rdi, r13
+	lea rsi, [rsp + 8]
+	add rcx, rsi
+@@:	mov eax, [rsi + EFI_MEMORY_DESCRIPTOR.Type]
+	cmp eax, EfiConventionalMemory
+	je .a
+	sub eax, usable_memory_types.0.start
+	cmp eax, usable_memory_types.0.end - usable_memory_types.0.start
+	jae .n
+.a:	sub rdi, 16
+	mov rdx, [rsi + EFI_MEMORY_DESCRIPTOR.NumberOfPages]
+	mov rax, [rsi + EFI_MEMORY_DESCRIPTOR.PhysicalStart]
+	shl rdx, 12
+	add rdx, rax
+	mov [rdi + 0], rax
+	mov [rdi + 8], rdx
+.n:	add rsi, rbx
+	cmp rsi, rcx
+	jne @b
+
+	mov rsi, r13
+	call memmap.radixsort
+	call memmap.merge
 
 	; 7.4.6 EFI_BOOT_SERVICES.ExitBootServices()
 	; EFI_STATUS (EFIAPI *EFI_EXIT_BOOT_SERVICES) (
 	;   IN EFI_HANDLE ImageHandle,
 	;   IN UINTN MapKey
 	; );
+	pop rdx
 	mov rcx, r12
 	eficall qword [r14 + EFI_BOOT_SERVICES.ExitBootServices]
 	uefi.assertgez rax, "ExitBootServices failed"
@@ -433,6 +452,93 @@ uefi._panic:
 @@:	cli
 	hlt
 	jmp @b
+
+
+; rdi: range start (incl)
+; rsi: range end   (excl)
+;
+; Each element is [start, end). Only start is considered.
+;
+; The algorithm is in-place radix sort using a single bit as radix.
+; This isn't very efficient but it is very simple.
+;
+; It uses at most 16*40 = 640 bytes on the stack.
+memmap.radixsort:
+	xor ebx, ebx
+	bts rbx, 51  ; x86 supports at most 52 physical bits
+
+.iter:
+	cmp rdi, rsi
+	je .r
+	mov r10, rdi
+	; 1. count zero bits
+	xor ecx, ecx
+@@:	xor edx, edx
+	test [rdi], rbx
+	setz dl
+	add rdi, 16
+	add ecx, edx
+	cmp rdi, rsi
+	jne @b
+	; 2. swap elements with one bit to high partition
+	mov rdi, r10
+	shl ecx, 4
+	add rcx, rdi
+	push rcx         ; mid
+@@:	xor edx, edx
+	test [rdi], rbx
+	jz .n
+	xor edx, 16
+	movaps xmm0, [rdi]
+	movaps xmm1, [rcx]
+	movaps [rcx], xmm0
+	movaps [rdi], xmm1
+.n:	add rcx, rdx
+	xor edx, 16
+	add rdi, rdx
+	cmp rcx, rsi
+	jne @b
+	mov rdi, r10
+	; recursively sort partitions
+	pop  rcx
+	cmp rbx, 1 shl 12  ; bits 0-11 are guaranteed to be zero
+	jl .r
+	shr rbx, 1
+	push rsi
+	mov  rsi, rcx
+	call .iter
+	pop  rcx
+	push rdi
+	mov  rdi, rsi
+	mov  rsi, rcx
+	call .iter
+	pop rdi
+	shl rbx, 1
+.r:	ret
+
+; Join contiguous regions.
+;
+; rdi: range start (incl) => new base
+; rsi: range end   (excl)
+memmap.merge:
+	push rsi
+	lea rbx, [rsi - 32]
+	sub rsi, 16
+@@:	mov rax, [rsi]
+	cmp rax, [rbx + 8]
+	ja .n
+	mov rax, [rbx]
+	mov [rsi], rax
+	jmp .c
+.n:	sub rsi, 16
+	movaps xmm0, [rbx]
+	movaps [rsi], xmm0
+.c:	sub rbx, 16
+	cmp rbx, rdi
+	jne @b
+	mov rdi, rsi
+	pop rsi
+	ret
 
 
 uefi.println._crlf: db 13, 10
