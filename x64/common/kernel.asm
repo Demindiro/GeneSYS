@@ -65,6 +65,22 @@ virtual at ($$ + (1 shl 21) - BOOTINFO.sizeof)
 	.memmap.end: dq ?
 end virtual
 exec:
+	mov rsp, _stack.end
+.clear_identity_map:
+	; the kernel is designed to survive a (nearly) FUBAR system state.
+	; the identity map is arbitrarily large and might not be reliable,
+	; so zero it out at start and pretend we have never been given one.
+	mov rdi, cr3
+	; in case PCID or some other funny bits are set
+	and rdi, -0x1000
+	push rdi
+	mov ecx, 256
+	xor eax, eax
+	rep stosq
+	; ... and immediately reset those bits + flush TLB
+	pop rdi
+	mov cr3, rdi
+.com1:
 	mov edx, COM1.IOBASE
 	call comx.init
 @@:	mov rsi, rsp
@@ -89,4 +105,7 @@ exec.end:
 
 org 0xffffffffc0e00000
 dat:
+; "stack is reserved" :^)))))
+_stack: rb 1024
+.end:
 dat.end:
