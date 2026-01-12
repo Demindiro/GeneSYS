@@ -1,5 +1,6 @@
 ; == kernel memory layout ==
 ; 0xffffffffc0000000 - 0xffffffffc0200000 : code  (RX)
+;   0xffffffffc01fffe0 - 0xffffffffc0200000 : boot info
 ; 0xffffffffc0200000 - 0xffffffffc0e00000 : guard (unmapped)
 ; 0xffffffffc0e00000 - 0xffffffffc1000000 : data  (RW)
 ;
@@ -30,9 +31,39 @@ header:
 times 28 db 0
 assert $ = 64
 
+;; structure passed by the bootloader
+BOOTINFO.sizeof = 32
+
 use64
 
 org 0xffffffffc0000000
+virtual at ($$ + (1 shl 21) - BOOTINFO.sizeof)
+	bootinfo:
+	; physical base address of the kernel code + data.
+	; it is exactly 4M, with first 2M for code and last 2M for data.
+	; it *must* be aligned on a 2M boundary.
+	.phys_base: dq ?
+	; the end (excl) virtual address of free data, starting from the head.
+	; data past this point has been allocated by the bootloader and should
+	; be used with care, as it includes page tables.
+	; i.e.:
+	;
+	; |        code         |          gap          |         data        |
+	;                                               |   free   |   used   |
+	;                                                          ^~~~
+	.data_free: dq ?
+	; the start (incl) address of the map with regular usable memory
+	;
+	; note that this *includes* the memory used by the kernel.
+	; to avoid incidents, always check `phys_base` before using memory
+	; defined in this map.
+	;
+	; the memory map should be in the code region to keep it immutable
+	; and keep more of the data region free.
+	.memmap.start: dq ?
+	; the end (excl) address of the map with regular usable memory
+	.memmap.end: dq ?
+end virtual
 exec:
 	mov edx, COM1.IOBASE
 	call comx.init

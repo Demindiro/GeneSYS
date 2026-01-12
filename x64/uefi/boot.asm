@@ -378,8 +378,33 @@ start:
 	; );
 	pop rdx
 	mov rcx, r12
+	push rdi  ; memmap start
+	push rsi  ; memmap end
 	eficall qword [r14 + EFI_BOOT_SERVICES.ExitBootServices]
 	uefi.assertgez rax, "ExitBootServices failed"
+
+.bootinfo:
+	pop rsi   ; memmap end
+	pop rdi   ; memmap start
+	; derive the physical base knowing that
+	; - the code and data regions are aligned on a 2M boundary
+	; - the code region comes right before the data region
+	mov rax, rdi
+	and rax, -1 shl 21
+	add rax, -1 shl 21
+	; bootinfo must be put at end of code regio
+	lea rbx, [rax + ((1 shl 21) - BOOTINFO.sizeof)]
+	mov [rbx + BOOTINFO.phys_base   ], rax
+	; we used physical addresses while populating the memory map
+	; to avoid touching the UEFI page table, but the kernel expects
+	; virtual addresses
+	mov rdx, KERNEL.DATA.START - (1 shl 21)
+	sub rdx, rax
+	lea rcx, [rdx + rdi]
+	mov [rbx + BOOTINFO.data_free   ], rcx
+	mov [rbx + BOOTINFO.memmap.start], rcx
+	lea rcx, [rdx + rsi]
+	mov [rbx + BOOTINFO.memmap.end  ], rcx
 
 	; enter kernel
 	cli
@@ -396,7 +421,7 @@ start:
 	push rax
 	retfq
 @@:	lidt [kernel.idtr]
-	mov rbp, kernel.start
+	mov rbp, KERNEL.CODE.START
 	jmp rbp
 
 ; rsi: prefixed string base
@@ -545,8 +570,16 @@ uefi.println._crlf: db 13, 10
 hello_uefi: db "Hello, UEFI!"
 match y,rodata._list { irp x,y { x } }
 
-; TODO avoid hardcoded path
-kernel.start = 0xffffffffc0000000
+BOOTINFO.sizeof       = 32
+BOOTINFO.phys_base    =  0
+BOOTINFO.data_free    =  8
+BOOTINFO.memmap.start = 16
+BOOTINFO.memmap.end   = 24
+
+KERNEL.CODE.START = 0xffffffffc0000000
+KERNEL.CODE.END   = KERNEL.CODE.START + (1 shl 21)
+KERNEL.DATA.START = KERNEL.CODE.START + (7 shl 21)
+KERNEL.DATA.END   = KERNEL.DATA.START + (1 shl 21)
 kernel.magic      = kernel +  0
 kernel.exec.size  = kernel +  8
 kernel.data.size  = kernel + 12
@@ -557,6 +590,7 @@ kernel.header.end = kernel + 64
 KERNEL.GDT.KERNEL_CS = 0x08
 KERNEL.GDT.KERNEL_SS = 0x10
 align 64
+; TODO avoid hardcoded path
 kernel: file "../../build/uefi/kernel.bin"
 .end:
 
