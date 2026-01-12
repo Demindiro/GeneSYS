@@ -355,7 +355,8 @@ end virtual
 
 	push rdx
 .copy_memmap:
-	mov rdi, r12
+	mov rdi, [.kernel_phys]
+	add rdi, (1 shl 21) - BOOTINFO.sizeof
 	lea rsi, [rsp + 8]
 	add rcx, rsi
 @@:	mov eax, [rsi + EFI_MEMORY_DESCRIPTOR.Type]
@@ -375,7 +376,8 @@ end virtual
 	cmp rsi, rcx
 	jne @b
 
-	mov rsi, r12
+	mov rsi, [.kernel_phys]
+	add rsi, (1 shl 21) - BOOTINFO.sizeof
 	call memmap.radixsort
 	call memmap.merge
 
@@ -394,12 +396,7 @@ end virtual
 .bootinfo:
 	pop rsi   ; memmap end
 	pop rdi   ; memmap start
-	; derive the physical base knowing that
-	; - the code and data regions are aligned on a 2M boundary
-	; - the code region comes right before the data region
-	mov rax, rdi
-	and rax, -1 shl 21
-	add rax, -1 shl 21
+	mov rax, [.kernel_phys]
 	; bootinfo must be put at end of code regio
 	lea rbx, [rax + ((1 shl 21) - BOOTINFO.sizeof)]
 	mov [rbx + BOOTINFO.phys_base   ], rax
@@ -408,8 +405,12 @@ end virtual
 	; virtual addresses
 	mov rdx, KERNEL.DATA.START - (1 shl 21)
 	sub rdx, rax
-	lea rcx, [rdx + rdi]
+	; cr3 points to the very last page we allocated
+	lea rcx, [rdx + r12]
 	mov [rbx + BOOTINFO.data_free   ], rcx
+	mov rdx, KERNEL.CODE.START
+	sub rdx, rax
+	lea rcx, [rdx + rdi]
 	mov [rbx + BOOTINFO.memmap.start], rcx
 	lea rcx, [rdx + rsi]
 	mov [rbx + BOOTINFO.memmap.end  ], rcx
