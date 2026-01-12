@@ -233,14 +233,21 @@ macro eficall target {
 ; rcx: EFI_HANDLE (of ourselves)
 ; rdx: EFI_SYSTEM_TABLE*
 start:
+virtual at r13
+	.handle:      dq ?
+	.kernel_phys: dq ?
+end virtual
 	push rbp
 	; r15 => System table
 	; r14 => BootServices
-	; r13 => CR3
-	; r12 => handle
+	; [r13 + 0] => handle
+	; [r13 + 8] => kernel phys base
+	; r12 => CR3
 	mov r15, rdx
 	mov r14, [r15 + EFI_SYSTEM_TABLE.BootServices]
-	mov r12, rcx
+	sub rsp, 16
+	mov r13, rsp
+	mov [.handle], rcx
 
 	lea rsi, [hello_uefi]
 	mov ecx, 12
@@ -272,6 +279,7 @@ start:
 	; align to 2M
 	add rdi, not (-1 shl 21)
 	and rdi,     (-1 shl 21)
+	mov [.kernel_phys], rdi
 
 	; code
 	lea rsi, [kernel.header.end]
@@ -310,7 +318,7 @@ start:
 	; identity map
 	mov rsi, cr3
 	sub rdi, 0x3000
-	mov r13, rdi
+	mov r12, rdi
 	mov ecx, 256
 	rep movsq
 
@@ -347,7 +355,7 @@ start:
 
 	push rdx
 .copy_memmap:
-	mov rdi, r13
+	mov rdi, r12
 	lea rsi, [rsp + 8]
 	add rcx, rsi
 @@:	mov eax, [rsi + EFI_MEMORY_DESCRIPTOR.Type]
@@ -367,7 +375,7 @@ start:
 	cmp rsi, rcx
 	jne @b
 
-	mov rsi, r13
+	mov rsi, r12
 	call memmap.radixsort
 	call memmap.merge
 
@@ -377,7 +385,7 @@ start:
 	;   IN UINTN MapKey
 	; );
 	pop rdx
-	mov rcx, r12
+	mov rcx, [.handle]
 	push rdi  ; memmap start
 	push rsi  ; memmap end
 	eficall qword [r14 + EFI_BOOT_SERVICES.ExitBootServices]
@@ -408,7 +416,7 @@ start:
 
 	; enter kernel
 	cli
-	mov cr3, r13
+	mov cr3, r12
 	lgdt [kernel.gdtr]
 	mov ax, KERNEL.GDT.KERNEL_SS
 	mov ds, ax
