@@ -305,8 +305,6 @@ end virtual
 	; PD: 0 -> code, 7 -> data
 	lea rax, [rdi - (2 shl 21) + PAGE.P + PAGE.PS + PAGE.G]
 	lea rdx, [rdi - (1 shl 21) + PAGE.P + PAGE.PS + PAGE.G + PAGE.RW]
-	;lea rax, [rdi - (2 shl 21) + PAGE.P + PAGE.PS]
-	;lea rdx, [rdi - (1 shl 21) + PAGE.P + PAGE.PS + PAGE.RW]
 	mov [rdi - 0x1000 + (8*0)], rax
 	mov [rdi - 0x1000 + (8*7)], rdx
 	; PDP: 511
