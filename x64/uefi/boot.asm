@@ -416,18 +416,6 @@ end virtual
 	; enter kernel
 	cli
 	mov cr3, r12
-	lgdt [kernel.gdtr]
-	mov ax, KERNEL.GDT.KERNEL_SS
-	mov ds, ax
-	mov es, ax
-	mov ss, ax
-	mov fs, ax
-	mov gs, ax
-	lea rax, [@f]
-	push KERNEL.GDT.KERNEL_CS
-	push rax
-	retfq
-@@:	lidt [kernel.idtr]
 	mov rbp, KERNEL.CODE.START
 	jmp rbp
 

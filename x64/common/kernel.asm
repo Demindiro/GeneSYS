@@ -65,7 +65,22 @@ virtual at ($$ + (1 shl 21) - BOOTINFO.sizeof)
 	.memmap.end: dq ?
 end virtual
 exec:
+
+.init:
+	lgdt [gdtr]
+	mov ax, GDT.KERNEL_SS
+	mov ss, ax
 	mov rsp, _stack.end
+	mov ds, ax
+	mov es, ax
+	mov fs, ax
+	mov gs, ax
+	lea rax, [@f]
+	push GDT.KERNEL_CS
+	push rax
+	retfq
+@@:	lidt [idtr]
+
 .clear_identity_map:
 	; the kernel is designed to survive a (nearly) FUBAR system state.
 	; the identity map is arbitrarily large and might not be reliable,
@@ -100,6 +115,12 @@ include "../common/idt.asm"
 include "../common/gdt.asm"
 include "../common/comx.asm"
 include "../common/crc32c.asm"
+
+idtr: dw idt.end - idt - 1
+      dq idt
+gdtr: dw gdt.end - gdt - 1
+      dq gdt
+
 exec.end:
 
 

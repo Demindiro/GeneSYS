@@ -60,10 +60,6 @@ f 255, idt.intr_com1
 .end: assert x = 256
 purge f, x
 
-idtr:
-	dw idt.end - idt - 1
-	dq idt
-
 
 idt.ex_reserved:
 	hlt
