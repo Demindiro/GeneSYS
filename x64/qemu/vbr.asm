@@ -43,7 +43,7 @@ org 0x7c00
 use16
 	; skip bpb
 	jmp start
-	align 32
+	align 64
 
 start:
 	mov esp, 0x1000
