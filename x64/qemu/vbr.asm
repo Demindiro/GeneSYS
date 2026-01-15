@@ -64,8 +64,7 @@ start:
 	mov ah, 0x42
 	mov dl, 0x80
 	int 0x13
-	mov si, msg_noread
-	jc panic
+	jc err_noread
 	inc dword [edd_packet.lba]
 
 zero_lomem:
@@ -98,6 +97,7 @@ load_memory_map:
 	mov word [e820_count + 2], 0
 
 zero_kernel:
+	call enter_unreal
 	; zero out entire kernel code/data region
 	mov ecx, 2 shl (21 - 2)
 	mov edi, kernel_base
@@ -141,6 +141,107 @@ load_kernel:
 	mov ecx, (KERNEL.SIZE + 0x1ff) shr 9
 	call read_kernel_part
 
+	jmp enter_long_mode
+
+; edi: destination
+; ecx: sector count (max 127)
+;
+; reads first to 0x10000, then copies to edi,
+; incrementing edi and edd_packet.lba by read amount.
+read_kernel_part:
+	call exit_unreal
+	push edi
+	mov word [edd_packet.sectors], cx
+	mov word [edd_packet.segment], 0x1000 ; 0x10 * 0x1000 = 0x10000 = 64KiB
+	mov word [edd_packet.offset ], 0
+	mov si, edd_packet
+	mov ah, 0x42
+	mov dl, 0x80
+	int 0x13
+	pop edi
+	jc err_noread
+	add dword [edd_packet.lba], ecx
+.copy:
+	call enter_unreal
+	mov esi, 1 shl 16
+	shl cx, 9 - 2
+@@:	mov eax, [esi]
+	add esi, 4
+	mov [edi], eax
+	add edi, 4
+	loop @b
+	ret
+
+err_noread:
+	mov si, msg_noread
+panic:
+	call exit_unreal
+	lodsb
+	xor cx, cx
+	mov cl, al
+@@:	lodsb
+	mov ah, 0xe
+	int 0x10
+	loop @b
+.halt:
+	hlt
+	jmp .halt
+
+; enter protected mode, set 4G limits for ds and es
+; then leave protected mode again
+; TODO perhaps just stay in protected mode?
+enter_unreal:
+	cli
+	lgdt [gdtr]
+	; We hit an *emulator* bug here:
+	;  1. (un)real mode (probably) runs under QEMU TCG regardless of KVM
+	;  2. mov ds, ax uses a stale value under some circumstances
+	; a "special" instruction inbetween appears to be a sufficient fix
+	mov ax, 0x20
+	mov ebx, cr0
+	or bl, CR0.PE
+	mov cr0, ebx
+	; far jump appears unnecessary, but apparently it is UB
+	; to do anything but do a far jump right after enabling protected mode,
+	; so do the right thing.
+	jmp 0x18:@f
+@@:	use32
+	;mov ax, 0x20  ; see above
+	mov ds, ax
+	mov es, ax
+	and bl, not CR0.PE
+	mov cr0, ebx
+	jmp 0:@f
+@@:	use16
+	ret
+
+; set ds and es to 0
+; this is necessary to avoid confusing the BIOS
+; run this before any BIOS interrupt
+exit_unreal:
+	xor ax, ax
+	mov ds, ax
+	mov es, ax
+	ret
+
+
+msg_noread: db .end - $ - 1, "Failed to read kernel"
+.end:
+
+edd_packet:
+.packet_size: dw 16
+.sectors: dw 1
+.offset: dw bootloader
+.segment: dw 0
+.lba: dq 0
+
+assert $ <= 0x7c00 + 510
+times (510 - ($-$$)) db 0xcc
+db 0x55, 0xaa
+assert $ - $$ = 512
+
+bootloader:
+
 enter_long_mode:
 	cli
 	mov eax, kernel_pml4
@@ -164,62 +265,6 @@ enter_long_mode:
 	mov fs, ax
 	mov gs, ax
 	jmp 0x8:main64
-
-; edi: destination
-; ecx: sector count (max 127)
-;
-; reads first to 0x10000, then copies to edi,
-; incrementing edi and edd_packet.lba by read amount.
-read_kernel_part:
-	push edi
-	mov word [edd_packet.sectors], cx
-	mov word [edd_packet.segment], 0x1000 ; 0x10 * 0x1000 = 0x10000 = 64KiB
-	mov word [edd_packet.offset ], 0
-	mov si, edd_packet
-	mov ah, 0x42
-	mov dl, 0x80
-	int 0x13
-	pop edi
-	mov si, msg_noread
-	jc panic
-	add dword [edd_packet.lba], ecx
-.copy:
-	mov esi, 1 shl 16
-	shl cx, 9 - 2
-@@:	mov eax, [esi]
-	add esi, 4
-	mov [edi], eax
-	add edi, 4
-	loop @b
-	ret
-
-panic:
-	lodsb
-	xor cx, cx
-	mov cl, al
-@@:	lodsb
-	mov ah, 0xe
-	int 0x10
-	loop @b
-.halt:
-	hlt
-	jmp .halt
-
-
-msg_noread: db .end - $ - 1, "Failed to read kernel"
-.end:
-
-edd_packet:
-.packet_size: dw 16
-.sectors: dw 1
-.offset: dw main64
-.segment: dw 0
-.lba: dq 0
-
-assert $ <= 0x7c00 + 510
-times (510 - ($-$$)) db 0xcc
-db 0x55, 0xaa
-assert $ - $$ = 512
 
 use64
 main64:
@@ -259,7 +304,9 @@ main64:
 gdt:
 	dq 0x0000000000000000
 	dq 0x00af9b000000ffff ; 0x08, A, RW, S, E, DPL=0, P, L, G
-	dq 0x00af93000000ffff ; 0x10, A, RW, S, DPL=0, P, L, G
+	dq 0x00af93000000ffff ; 0x10, A, RW, S,    DPL=0, P, L, G
+	dq 0x008f9b000000ffff ; 0x18, A, RW, S, E, DPL=0, P, G   <--  for "unreal" mode
+	dq 0x008f93000000ffff ; 0x20, A, RW, S,    DPL=0, P, G   <--  for "unreal" mode
 .end:
 gdtr:
 	dw gdt.end - gdt - 1
