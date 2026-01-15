@@ -46,12 +46,20 @@ use16
 	align 32
 
 start:
+	mov esp, 0x1000
 	; si points to active MBR partition
 	; we only care about the LBA, ignore the rest
 	mov eax, [si + 8]
 	inc eax ; skip VBR, which would be us
+	; load extra sector of bootcode
 	mov dword [edd_packet.lba], eax
-	mov esp, 0x1000
+	mov si, edd_packet
+	mov ah, 0x42
+	mov dl, 0x80
+	int 0x13
+	mov si, msg_noread
+	jc panic
+	inc dword [edd_packet.lba]
 
 load_memory_map:
 	; ... we'll assume it won't be more than 128 free entries or so
@@ -99,13 +107,15 @@ init_pagetable:
 	; PML4: 511
 	mov eax, kernel_pdp + PAGE.P + PAGE.RW
 	mov [kernel_pml4 + (511*8)], eax
-	; set up identity mapping for first 2MiB
-	; we can safely use a hugepage here
+	; set up identity mapping for first 6MiB
+	; we can safely use a hugepage for 0-2M (see Intel manual)
 	mov di, 0x1000
 	mov cx, (0x4000 - 0x1000) / 2
 	xor ax, ax
 	rep stosw
-	mov  word [idmap_pd   ], 0         + PAGE.P + PAGE.PS + PAGE.RW  ; PDE
+	mov  word [idmap_pd +  0], (0 shl 21) + PAGE.P + PAGE.PS + PAGE.RW  ; PDE
+	mov dword [idmap_pd +  8], (1 shl 21) + PAGE.P + PAGE.PS + PAGE.RW  ; PDE
+	mov dword [idmap_pd + 16], (2 shl 21) + PAGE.P + PAGE.PS + PAGE.RW  ; PDE
 	mov  word [idmap_pdp  ], idmap_pd  + PAGE.P + PAGE.RW  ; PDPE
 	mov  word [kernel_pml4], idmap_pdp + PAGE.P + PAGE.RW  ; PML4E
 
@@ -118,14 +128,6 @@ load_kernel:
 	assert KERNEL.SIZE <= (127 shl 9)
 	mov ecx, (KERNEL.SIZE + 0x1ff) shr 9
 	call read_kernel_part
-
-bootinfo:
-	mov dword [kernel_bootinfo + BOOTINFO.phys_base], kernel_base
-	;; TODO
-	mov dword [kernel_bootinfo + BOOTINFO.data_free], 0
-	mov dword [kernel_bootinfo + BOOTINFO.memmap.start], 0
-	mov dword [kernel_bootinfo + BOOTINFO.memmap.end  ], 0
-	;;
 
 enter_long_mode:
 	cli
@@ -156,6 +158,9 @@ enter_long_mode:
 ; incrementing edi and edd_packet.lba by read amount.
 read_kernel_part:
 	push edi
+	mov word [edd_packet.sectors], cx
+	mov word [edd_packet.segment], 0x1000 ; 0x10 * 0x1000 = 0x10000 = 64KiB
+	mov word [edd_packet.offset ], 0
 	mov si, edd_packet
 	mov ah, 0x42
 	mov dl, 0x80
@@ -186,13 +191,33 @@ panic:
 	hlt
 	jmp .halt
 
-use64
-main64:
-	jmp KERNEL.CODE.START
-
 
 msg_noread: db .end - $ - 1, "Failed to read kernel"
 .end:
+
+edd_packet:
+.packet_size: dw 16
+.sectors: dw 1
+.offset: dw main64
+.segment: dw 0
+.lba: dq 0
+
+assert $ <= 0x7c00 + 510
+times (510 - ($-$$)) db 0xcc
+db 0x55, 0xaa
+assert $ - $$ = 512
+
+use64
+main64:
+.bootinfo:
+	mov edi, kernel_bootinfo
+	mov dword [rdi + BOOTINFO.phys_base], kernel_base
+	;; TODO
+	mov dword [rdi + BOOTINFO.data_free], 0
+	mov dword [rdi + BOOTINFO.memmap.start], 0
+	mov dword [rdi + BOOTINFO.memmap.end  ], 0
+	;;
+	jmp KERNEL.CODE.START
 
 gdt:
 	dq 0x0000000000000000
@@ -203,17 +228,10 @@ gdtr:
 	dw gdt.end - gdt - 1
 	dq gdt
 
-edd_packet:
-.packet_size: dw 16
-.sectors: dw 127
-.offset: dw 0
-.segment: dw 0x1000 ; 0x10 * 0x1000 = 0x10000 = 64KiB
-.lba: dq 0
+	times ((-$) and 0x1ff) db 0xcc
 
-assert $ <= 0x7c00 + 510
-times (510 - ($-$$)) db 0xcc
-db 0x55, 0xaa
-assert $ - $$ = 512
+main64.end:
+assert $ and 0x1ff = 0
 
 org 0
 file "build/qemu/kernel.bin"
