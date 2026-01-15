@@ -20,17 +20,6 @@
 ; but both PD entries are in the same cache line.
 
 
-header:
-.magic: db "GeneSYS", 0
-.exec: dd exec.end - exec
-.data: dd dat.end  - dat
-.idt:  dw idt.end - idt - 1
-       dq idt
-.gdtr: dw gdt.end - gdt - 1
-       dq gdt
-times 28 db 0
-assert $ = 64
-
 ;; structure passed by the bootloader
 BOOTINFO.sizeof = 32
 

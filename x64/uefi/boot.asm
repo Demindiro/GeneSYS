@@ -282,8 +282,9 @@ end virtual
 	mov [.kernel_phys], rdi
 
 	; code
-	lea rsi, [kernel.header.end]
-	mov ecx, [kernel.exec.size]
+	assert kernel.end <> kernel
+	lea rsi, [kernel]
+	mov ecx, kernel.end - kernel
 	rep movsb
 	mov ecx, edi
 	neg ecx
@@ -292,14 +293,7 @@ end virtual
 	rep stosb
 
 	; data
-	mov ecx, [kernel.data.size]
-	rep movsb
-	mov ecx, edi
-	neg ecx
-	and ecx, not (-1 shl 21)
-	mov edx, 1 shl 21
-	cmp dword [kernel.data.size], 0
-	cmove ecx, edx ; if data.size == 0 then ecx = 2M
+	mov ecx, 1 shl 21
 	rep stosb
 
 	; PD: 0 -> code, 7 -> data
@@ -575,15 +569,6 @@ KERNEL.CODE.START = 0xffffffffc0000000
 KERNEL.CODE.END   = KERNEL.CODE.START + (1 shl 21)
 KERNEL.DATA.START = KERNEL.CODE.START + (7 shl 21)
 KERNEL.DATA.END   = KERNEL.DATA.START + (1 shl 21)
-kernel.magic      = kernel +  0
-kernel.exec.size  = kernel +  8
-kernel.data.size  = kernel + 12
-kernel.idtr       = kernel + 16
-kernel.gdtr       = kernel + 26
-kernel._reserved  = kernel + 36
-kernel.header.end = kernel + 64
-KERNEL.GDT.KERNEL_CS = 0x08
-KERNEL.GDT.KERNEL_SS = 0x10
 align 64
 ; TODO avoid hardcoded path
 kernel: file "../../build/uefi/kernel.bin"
