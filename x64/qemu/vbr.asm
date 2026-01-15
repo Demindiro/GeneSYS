@@ -12,6 +12,9 @@ kernel_pml4 = kernel_end - (3 shl 12)
 idmap_pd  = 0x1000
 idmap_pdp = 0x2000
 
+e820_count = 0x6004
+e820_base  = 0x6008
+
 kernel = kernel_base
 include "../common/kernel.inc"
 
@@ -29,10 +32,14 @@ PAGE.G   =  1 shl  8
 PAGE.XD  =  1 shl 63
 
 CR0.PE = 1 shl  0
+CR0.MP = 1 shl  1
+CR0.EM = 1 shl  2
 CR0.PG = 1 shl 31
 
 CR4.PAE    =  1 shl  5
 CR4.PGE    =  1 shl  7
+CR4.OSFXSR =  1 shl  9
+CR4.OSXMMEXCPT =  1 shl 10
 CR4.PCIDE  =  1 shl 17
 
 MSR.EFER = 0xc0000080
@@ -61,29 +68,34 @@ start:
 	jc panic
 	inc dword [edd_packet.lba]
 
+zero_lomem:
+	; knowing the low mem is zero simplifies some things
+	mov di, 0x1000
+	mov cx, (0x4000 - 0x1000) / 2
+	xor ax, ax
+	rep stosw
+
 load_memory_map:
 	; ... we'll assume it won't be more than 128 free entries or so
 	; ... and also that E820 is definitely present
 	xor ebx, ebx
 	mov edx, 0x534d4150
-	mov di, 0x500
+	mov di, e820_base
 .loop:
 	mov eax, 0xe820
 	mov ecx, 24
 	int 0x15
 	jc .end
-	; skip non-free memory
-	cmp byte [di + 16], 1
-	jne @f
-	; +16 because we don't care about the type
-	add di, 16
-@@:	test ebx, ebx
+	add di, 24
+	test ebx, ebx
 	jnz .loop
 .end:
-	; use -1 (negative) as end marker
-	mov al, -1
-	mov cx, 16
-	rep stosb
+	sub di, e820_base
+	; divide by 24 (valid for [0;128])
+	imul ax, di, (1 + ((1 shl 12) / 24))
+	shr ax, 12
+	mov word [e820_count + 0], ax
+	mov word [e820_count + 2], 0
 
 zero_kernel:
 	; zero out entire kernel code/data region
@@ -133,14 +145,16 @@ enter_long_mode:
 	cli
 	mov eax, kernel_pml4
 	mov cr3, eax
-	mov eax, CR4.PAE or CR4.PGE ; or CR4.PCIDE
+	; we'll need SSE it for radixsort
+	mov eax, (CR4.OSFXSR or CR4.OSXMMEXCPT) or CR4.PAE or CR4.PGE ; or CR4.PCIDE
 	mov cr4, eax
 	mov ecx, MSR.EFER
 	rdmsr
 	or eax, MSR.EFER.SCE or MSR.EFER.LME
 	wrmsr
 	mov ebx, cr0
-	or ebx, CR0.PE or CR0.PG
+	or ebx, CR0.MP or CR0.PE or CR0.PG
+	and ebx, not CR0.EM
 	mov cr0, ebx
 	lgdt [gdtr]
 	mov ax, 0x10
@@ -209,15 +223,38 @@ assert $ - $$ = 512
 
 use64
 main64:
-.bootinfo:
+.memmap:
+	; copy free E820 entries
 	mov edi, kernel_bootinfo
-	mov dword [rdi + BOOTINFO.phys_base], kernel_base
-	;; TODO
-	mov dword [rdi + BOOTINFO.data_free], 0
-	mov dword [rdi + BOOTINFO.memmap.start], 0
-	mov dword [rdi + BOOTINFO.memmap.end  ], 0
-	;;
+	mov esi, e820_count
+	lodsd
+	mov ecx, eax
+.l:	cmp byte [rsi + 16], 1
+	jne @f
+	sub edi, 16
+	lodsq
+	mov [rdi], rax
+	lodsq
+	mov [rdi + 8], rax
+	add esi, 8
+	loop .l
+@@:	add esi, 24
+	loop .l
+	mov esi, kernel_bootinfo
+	call memmap.radixsort
+	call memmap.merge
+
+.bootinfo:
+	mov ebx, kernel_bootinfo
+	mov qword [rbx + BOOTINFO.phys_base], kernel_base
+	mov qword [rbx + BOOTINFO.data_free], KERNEL.DATA.END - (3 shl 12)
+	add rdi, KERNEL.CODE.START - kernel_code
+	add rsi, KERNEL.CODE.START - kernel_code
+	mov [rbx + BOOTINFO.memmap.start], rdi
+	mov [rbx + BOOTINFO.memmap.end  ], rsi
 	jmp KERNEL.CODE.START
+
+	include "../util/memmap.asm"
 
 gdt:
 	dq 0x0000000000000000
@@ -231,7 +268,7 @@ gdtr:
 	times ((-$) and 0x1ff) db 0xcc
 
 main64.end:
-assert $ and 0x1ff = 0
+assert $ = $$ + 1024
 
 org 0
 file "build/qemu/kernel.bin"
