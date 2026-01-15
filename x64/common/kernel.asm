@@ -78,6 +78,9 @@ exec:
 	; in case PCID or some other funny bits are set
 	and rdi, -0x1000
 	push rdi
+	; use virtual address
+	sub rdi, [bootinfo.phys_base]
+	add rdi, dat - (1 shl 21)
 	mov ecx, 256
 	xor eax, eax
 	rep stosq
