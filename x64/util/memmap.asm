@@ -65,8 +65,10 @@ memmap.radixsort:
 ; rdi: range start (incl) => new base
 ; rsi: range end   (excl)
 memmap.merge:
-	push rsi
 	lea rbx, [rsi - 32]
+	cmp rbx, rdi
+	jl .e
+	push rsi
 	sub rsi, 16
 @@:	mov rax, [rsi]
 	cmp rax, [rbx + 8]
@@ -79,7 +81,7 @@ memmap.merge:
 	movaps [rsi], xmm0
 .c:	sub rbx, 16
 	cmp rbx, rdi
-	jne @b
+	jge @b
 	mov rdi, rsi
 	pop rsi
-	ret
+.e:	ret
