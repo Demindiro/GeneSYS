@@ -559,16 +559,7 @@ uefi.println._crlf: db 13, 10
 hello_uefi: db "Hello, UEFI!"
 match y,rodata._list { irp x,y { x } }
 
-BOOTINFO.sizeof       = 32
-BOOTINFO.phys_base    =  0
-BOOTINFO.data_free    =  8
-BOOTINFO.memmap.start = 16
-BOOTINFO.memmap.end   = 24
-
-KERNEL.CODE.START = 0xffffffffc0000000
-KERNEL.CODE.END   = KERNEL.CODE.START + (1 shl 21)
-KERNEL.DATA.START = KERNEL.CODE.START + (7 shl 21)
-KERNEL.DATA.END   = KERNEL.DATA.START + (1 shl 21)
+include "../common/kernel.inc"
 align 64
 ; TODO avoid hardcoded path
 kernel: file "../../build/uefi/kernel.bin"
