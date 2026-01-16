@@ -177,21 +177,6 @@ efi_buffer_too_small  = (1 shl 63) or 5
 efi_out_of_resources  = (1 shl 63) or 9
 
 
-PAGE.P   =  1 shl  0
-PAGE.RW  =  1 shl  1
-PAGE.US  =  1 shl  2
-PAGE.PWT =  1 shl  3
-PAGE.PCD =  1 shl  4
-PAGE.A   =  1 shl  5
-PAGE.D   =  1 shl  6
-;PAGE.PAT =  1 shl  7   ; either 7 or 12...
-PAGE.PS  =  1 shl  7
-PAGE.G   =  1 shl  8
-PAGE.XD  =  1 shl 63
-
-CR4.PGE     =  1 shl  7
-CR4.PCID    =  1 shl 17
-
 ; https://board.flatassembler.net/topic.php?t=8619
 rodata._list equ
 macro rodata {
@@ -282,24 +267,19 @@ end virtual
 	mov [.kernel_phys], rdi
 
 	; code
-	lea rsi, [kernel.header.end]
-	mov ecx, [kernel.exec.size]
+	assert kernel.end <> kernel
+	lea rsi, [kernel]
+	mov ecx, kernel.end - kernel
 	rep movsb
 	mov ecx, edi
 	neg ecx
 	and ecx, not (-1 shl 21)
-	xor eax, eax
+	mov al, 0xcc
 	rep stosb
 
 	; data
-	mov ecx, [kernel.data.size]
-	rep movsb
-	mov ecx, edi
-	neg ecx
-	and ecx, not (-1 shl 21)
-	mov edx, 1 shl 21
-	cmp dword [kernel.data.size], 0
-	cmove ecx, edx ; if data.size == 0 then ecx = 2M
+	xor eax, eax
+	mov ecx, 1 shl 21
 	rep stosb
 
 	; PD: 0 -> code, 7 -> data
@@ -416,18 +396,6 @@ end virtual
 	; enter kernel
 	cli
 	mov cr3, r12
-	lgdt [kernel.gdtr]
-	mov ax, KERNEL.GDT.KERNEL_SS
-	mov ds, ax
-	mov es, ax
-	mov ss, ax
-	mov fs, ax
-	mov gs, ax
-	lea rax, [@f]
-	push KERNEL.GDT.KERNEL_CS
-	push rax
-	retfq
-@@:	lidt [kernel.idtr]
 	mov rbp, KERNEL.CODE.START
 	jmp rbp
 
@@ -485,117 +453,16 @@ uefi._panic:
 	hlt
 	jmp @b
 
-
-; rdi: range start (incl)
-; rsi: range end   (excl)
-;
-; Each element is [start, end). Only start is considered.
-;
-; The algorithm is in-place radix sort using a single bit as radix.
-; This isn't very efficient but it is very simple.
-;
-; It uses at most 16*40 = 640 bytes on the stack.
-memmap.radixsort:
-	xor ebx, ebx
-	bts rbx, 51  ; x86 supports at most 52 physical bits
-
-.iter:
-	cmp rdi, rsi
-	je .r
-	mov r10, rdi
-	; 1. count zero bits
-	xor ecx, ecx
-@@:	xor edx, edx
-	test [rdi], rbx
-	setz dl
-	add rdi, 16
-	add ecx, edx
-	cmp rdi, rsi
-	jne @b
-	; 2. swap elements with one bit to high partition
-	mov rdi, r10
-	shl ecx, 4
-	add rcx, rdi
-	push rcx         ; mid
-@@:	xor edx, edx
-	test [rdi], rbx
-	jz .n
-	xor edx, 16
-	movaps xmm0, [rdi]
-	movaps xmm1, [rcx]
-	movaps [rcx], xmm0
-	movaps [rdi], xmm1
-.n:	add rcx, rdx
-	xor edx, 16
-	add rdi, rdx
-	cmp rcx, rsi
-	jne @b
-	mov rdi, r10
-	; recursively sort partitions
-	pop  rcx
-	cmp rbx, 1 shl 12  ; bits 0-11 are guaranteed to be zero
-	jl .r
-	shr rbx, 1
-	push rsi
-	mov  rsi, rcx
-	call .iter
-	pop  rcx
-	push rdi
-	mov  rdi, rsi
-	mov  rsi, rcx
-	call .iter
-	pop rdi
-	shl rbx, 1
-.r:	ret
-
-; Join contiguous regions.
-;
-; rdi: range start (incl) => new base
-; rsi: range end   (excl)
-memmap.merge:
-	push rsi
-	lea rbx, [rsi - 32]
-	sub rsi, 16
-@@:	mov rax, [rsi]
-	cmp rax, [rbx + 8]
-	ja .n
-	mov rax, [rbx]
-	mov [rsi], rax
-	jmp .c
-.n:	sub rsi, 16
-	movaps xmm0, [rbx]
-	movaps [rsi], xmm0
-.c:	sub rbx, 16
-	cmp rbx, rdi
-	jne @b
-	mov rdi, rsi
-	pop rsi
-	ret
-
+include "../util/memmap.asm"
 
 uefi.println._crlf: db 13, 10
 hello_uefi: db "Hello, UEFI!"
 match y,rodata._list { irp x,y { x } }
 
-BOOTINFO.sizeof       = 32
-BOOTINFO.phys_base    =  0
-BOOTINFO.data_free    =  8
-BOOTINFO.memmap.start = 16
-BOOTINFO.memmap.end   = 24
+include "../util/paging.asm"
+include "../util/registers.asm"
 
-KERNEL.CODE.START = 0xffffffffc0000000
-KERNEL.CODE.END   = KERNEL.CODE.START + (1 shl 21)
-KERNEL.DATA.START = KERNEL.CODE.START + (7 shl 21)
-KERNEL.DATA.END   = KERNEL.DATA.START + (1 shl 21)
-kernel.magic      = kernel +  0
-kernel.exec.size  = kernel +  8
-kernel.data.size  = kernel + 12
-kernel.idtr       = kernel + 16
-kernel.gdtr       = kernel + 26
-kernel._reserved  = kernel + 36
-kernel.header.end = kernel + 64
-KERNEL.GDT.KERNEL_CS = 0x08
-KERNEL.GDT.KERNEL_SS = 0x10
+include "../common/kernel.inc"
 align 64
 ; TODO avoid hardcoded path
 kernel: file "../../build/uefi/kernel.bin"

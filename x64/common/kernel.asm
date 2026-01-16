@@ -20,17 +20,6 @@
 ; but both PD entries are in the same cache line.
 
 
-header:
-.magic: db "GeneSYS", 0
-.exec: dd exec.end - exec
-.data: dd dat.end  - dat
-.idt:  dw idt.end - idt - 1
-       dq idt
-.gdtr: dw gdt.end - gdt - 1
-       dq gdt
-times 28 db 0
-assert $ = 64
-
 ;; structure passed by the bootloader
 BOOTINFO.sizeof = 32
 
@@ -65,7 +54,22 @@ virtual at ($$ + (1 shl 21) - BOOTINFO.sizeof)
 	.memmap.end: dq ?
 end virtual
 exec:
+
+.init:
+	lgdt [gdtr]
+	mov ax, GDT.KERNEL_SS
+	mov ss, ax
 	mov rsp, _stack.end
+	mov ds, ax
+	mov es, ax
+	mov fs, ax
+	mov gs, ax
+	lea rax, [@f]
+	push GDT.KERNEL_CS
+	push rax
+	retfq
+@@:	lidt [idtr]
+
 .clear_identity_map:
 	; the kernel is designed to survive a (nearly) FUBAR system state.
 	; the identity map is arbitrarily large and might not be reliable,
@@ -74,6 +78,9 @@ exec:
 	; in case PCID or some other funny bits are set
 	and rdi, -0x1000
 	push rdi
+	; use virtual address
+	sub rdi, [bootinfo.phys_base]
+	add rdi, dat - (1 shl 21)
 	mov ecx, 256
 	xor eax, eax
 	rep stosq
@@ -100,6 +107,12 @@ include "../common/idt.asm"
 include "../common/gdt.asm"
 include "../common/comx.asm"
 include "../common/crc32c.asm"
+
+idtr: dw idt.end - idt - 1
+      dq idt
+gdtr: dw gdt.end - gdt - 1
+      dq gdt
+
 exec.end:
 
 
