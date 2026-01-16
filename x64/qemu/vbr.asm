@@ -18,33 +18,8 @@ e820_base  = 0x6008
 kernel = kernel_base
 include "../common/kernel.inc"
 
-
-PAGE.P   =  1 shl  0
-PAGE.RW  =  1 shl  1
-PAGE.US  =  1 shl  2
-PAGE.PWT =  1 shl  3
-PAGE.PCD =  1 shl  4
-PAGE.A   =  1 shl  5
-PAGE.D   =  1 shl  6
-;PAGE.PAT =  1 shl  7   ; either 7 or 12...
-PAGE.PS  =  1 shl  7
-PAGE.G   =  1 shl  8
-PAGE.XD  =  1 shl 63
-
-CR0.PE = 1 shl  0
-CR0.MP = 1 shl  1
-CR0.EM = 1 shl  2
-CR0.PG = 1 shl 31
-
-CR4.PAE    =  1 shl  5
-CR4.PGE    =  1 shl  7
-CR4.OSFXSR =  1 shl  9
-CR4.OSXMMEXCPT =  1 shl 10
-CR4.PCIDE  =  1 shl 17
-
-MSR.EFER = 0xc0000080
-MSR.EFER.SCE = 1 shl 0
-MSR.EFER.LME = 1 shl 8
+include "../util/paging.asm"
+include "../util/registers.asm"
 
 org 0x7c00
 use16

@@ -177,21 +177,6 @@ efi_buffer_too_small  = (1 shl 63) or 5
 efi_out_of_resources  = (1 shl 63) or 9
 
 
-PAGE.P   =  1 shl  0
-PAGE.RW  =  1 shl  1
-PAGE.US  =  1 shl  2
-PAGE.PWT =  1 shl  3
-PAGE.PCD =  1 shl  4
-PAGE.A   =  1 shl  5
-PAGE.D   =  1 shl  6
-;PAGE.PAT =  1 shl  7   ; either 7 or 12...
-PAGE.PS  =  1 shl  7
-PAGE.G   =  1 shl  8
-PAGE.XD  =  1 shl 63
-
-CR4.PGE     =  1 shl  7
-CR4.PCID    =  1 shl 17
-
 ; https://board.flatassembler.net/topic.php?t=8619
 rodata._list equ
 macro rodata {
@@ -472,6 +457,9 @@ include "../util/memmap.asm"
 uefi.println._crlf: db 13, 10
 hello_uefi: db "Hello, UEFI!"
 match y,rodata._list { irp x,y { x } }
+
+include "../util/paging.asm"
+include "../util/registers.asm"
 
 include "../common/kernel.inc"
 align 64
