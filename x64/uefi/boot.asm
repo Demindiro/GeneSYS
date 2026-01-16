@@ -274,10 +274,11 @@ end virtual
 	mov ecx, edi
 	neg ecx
 	and ecx, not (-1 shl 21)
-	xor eax, eax
+	mov al, 0xcc
 	rep stosb
 
 	; data
+	xor eax, eax
 	mov ecx, 1 shl 21
 	rep stosb
 
