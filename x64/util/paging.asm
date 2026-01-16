@@ -1,0 +1,11 @@
+PAGE.P   =  1 shl  0
+PAGE.RW  =  1 shl  1
+PAGE.US  =  1 shl  2
+PAGE.PWT =  1 shl  3
+PAGE.PCD =  1 shl  4
+PAGE.A   =  1 shl  5
+PAGE.D   =  1 shl  6
+;PAGE.PAT =  1 shl  7   ; either 7 or 12...
+PAGE.PS  =  1 shl  7
+PAGE.G   =  1 shl  8
+PAGE.XD  =  1 shl 63
