@@ -161,9 +161,5 @@ allocator.init:
 	stosw
 	cmp rsi, allocator.sets + (ALLOCATOR.SETS * 2)
 	jne .count_superset
-
-	mov r8, allocator.sets
-	mov r9, allocator.sets.super
-	mov r10, allocator.sets.end
-	hlt
+	; done
 	ret
