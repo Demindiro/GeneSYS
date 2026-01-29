@@ -6,6 +6,13 @@
 
 include "../util/paging.asm"
 
+ALLOCATOR.PAGES_PER_SET     = 1024
+ALLOCATOR.SETS_PER_SUPERSET = 32
+
+ALLOCATOR.SUPERSETS = 256
+ALLOCATOR.SETS      = ALLOCATOR.SETS_PER_SUPERSET * ALLOCATOR.SUPERSETS
+ALLOCATOR.PAGES     = ALLOCATOR.PAGES_PER_SET     * ALLOCATOR.SETS
+
 allocator.init:
 	; allocate 4K page
 	mov rdx, [data_free]
@@ -121,7 +128,42 @@ allocator.init:
 	cmp rsi, rbx
 	jne @b
 .bitmap_end:
+	; zero out set counters
+	mov ecx, (allocator.sets.end - allocator.sets) / 8
+	mov rdi, allocator.sets
+	xor eax, eax
+	rep stosq
+	; count pages per set
+	mov rsi, allocator.bitmap
+	mov rdi, allocator.sets
+.count_set:
+	xor eax, eax
+	lea rbx, [rsi + (ALLOCATOR.PAGES_PER_SET / 8)]
+@@:	popcnt rdx, [rsi]
+	add eax, edx
+	add rsi, 8
+	cmp rsi, rbx
+	jne @b
+	stosw
+	cmp rsi, allocator.bitmap + (1 shl 20)
+	jne .count_set
+	; count pages per superset
+	mov rsi, allocator.sets
+	mov rdi, allocator.sets.super
+.count_superset:
+	xor eax, eax
+	lea rbx, [rsi + ALLOCATOR.SETS_PER_SUPERSET*2]
+@@:	movzx edx, word [rsi]
+	add eax, edx
+	add rsi, 2
+	cmp rsi, rbx
+	jne @b
+	stosw
+	cmp rsi, allocator.sets + (ALLOCATOR.SETS * 2)
+	jne .count_superset
 
-
+	mov r8, allocator.sets
+	mov r9, allocator.sets.super
+	mov r10, allocator.sets.end
 	hlt
 	ret

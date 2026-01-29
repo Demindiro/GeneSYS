@@ -133,4 +133,10 @@ _stack: rb 1024
 .end:
 ; free head, initialized to bootinfo.data_free
 data_free: dq ?
+rq 7  ; pad to cache line
+
+allocator.sets: rw ALLOCATOR.SETS
+.super:         rw ALLOCATOR.SUPERSETS
+.end:
+
 dat.end:
