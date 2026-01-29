@@ -1,0 +1,1 @@
+LIBOS.PATH = "./build/libos/hello.bin"

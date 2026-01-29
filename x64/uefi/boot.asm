@@ -1,3 +1,5 @@
+include "../../x64-config.inc"
+
 use64
 
 org 0
@@ -392,9 +394,8 @@ end virtual
 	mov [rbx + BOOTINFO.memmap.start], rcx
 	lea rcx, [rdx + rsi]
 	mov [rbx + BOOTINFO.memmap.end  ], rcx
-	xor eax, eax
-	mov [rbx + BOOTINFO.libos.start], rax
-	mov [rbx + BOOTINFO.libos.end  ], rax
+	mov qword [rbx + BOOTINFO.libos.start], KERNEL.CODE.START + (kernel.libos - kernel)
+	mov qword [rbx + BOOTINFO.libos.end  ], KERNEL.CODE.START + (kernel.end   - kernel)
 
 	; enter kernel
 	cli
@@ -469,7 +470,16 @@ include "../common/kernel.inc"
 align 64
 ; TODO avoid hardcoded path
 kernel: file "../../build/uefi/kernel.bin"
+; to simplify things, include libos along with the kernel :)
+times ((-$) and 63) int3   ; int3 as guard + align for faster memcpy on boot
+.libos: file CONFIG.LIBOS.PATH
+times ((-$) and 63) int3   ; ditto
 .end:
+
+; for sanity, limit the kernel to 1.5MiB
+; this leaves 512K for runtime generated information, which
+; should be plenty for all but the most absurd platforms
+assert (kernel.end - kernel) <= (3 shl 20)
 
 times ((-$) and 0xfff) db 0
 
