@@ -1,12 +1,13 @@
 ; == kernel memory layout ==
-; 0xffffffffc0000000 - 0xffffffffc0200000 : code  (RX)
-;   0xffffffffc01fffe0 - 0xffffffffc0200000 : boot info
-; 0xffffffffc0200000 - 0xffffffffc0e00000 : guard (unmapped)
-; 0xffffffffc0a00000 - 0xffffffffc0b00000 : allocator bitmap
-; 0xffffffffc0c00000 - 0xffffffffc0e00000 : guard (unmapped)
-; 0xffffffffc0e00000 - 0xffffffffc1000000 : data  (RW)
-;
-; Two entire pages of
+; 0: 0xffffffffc0000000 - 0xffffffffc0200000 : code  (RX)
+;      0xffffffffc01fffe0 - 0xffffffffc0200000 : boot info
+; 1: 0xffffffffc0200000 - 0xffffffffc0400000 : guard (unmapped)
+; 2: 0xffffffffc0400000 - 0xffffffffc0600000 : guard (unmapped)
+; 3: 0xffffffffc0600000 - 0xffffffffc0800000 : temp page (unmapped/RW)
+; 4: 0xffffffffc0800000 - 0xffffffffc0a00000 : guard (unmapped)
+; 5: 0xffffffffc0a00000 - 0xffffffffc0b00000 : allocator bitmap
+; 6: 0xffffffffc0c00000 - 0xffffffffc0e00000 : guard (unmapped)
+; 7: 0xffffffffc0e00000 - 0xffffffffc1000000 : data  (RW)
 ;
 ; Motivation: we want to minimize pointer chasing as kernel code/data
 ; is likely to be cold.
@@ -25,7 +26,12 @@
 ;; structure passed by the bootloader
 BOOTINFO.sizeof = 48
 
+temp.base        = 0xffffffffc0600000
 allocator.bitmap = 0xffffffffc0a00000
+
+init_libos.base  = (1 shl 30) - (1 shl 21)
+
+temp.pde = dat.end - 0x1000 + 8*3 ; TODO we provide guarantees about page table layout
 
 use64
 
@@ -101,7 +107,56 @@ exec:
 	call allocator.init
 
 .load_libos:
+	; allocate and initialize page table
 	call allocator.alloc_2m
+	mov r15, rax
+	or rax, PAGE.PS or PAGE.RW or PAGE.P
+	mov [temp.pde], rax
+	; zero out entire page
+	mov ecx, (1 shl 21) / 8
+	mov rdi, temp.base
+	xor eax, eax
+	rep stosq
+	; copy kernel PML4
+	; TODO more hardcoding please :)
+	mov rsi, cr3
+	sub rsi, [bootinfo.phys_base]
+	add rsi, dat - (1 shl 21)
+	add rsi, 2048
+	mov rdi, temp.base + 2048
+	mov ecx, 256
+	rep movsq
+	; PDP
+	lea rax, [r15 + 0x1000 + (PAGE.US or PAGE.RW or PAGE.P)]
+	mov [temp.base + 0x0000], rax
+	; PD
+	lea rax, [r15 + 0x2000 + (PAGE.US or PAGE.RW or PAGE.P)]
+	mov [temp.base + 0x1000], rax
+	; page table
+	lea rax, [r15 + (PAGE.PS or PAGE.US or PAGE.P)]
+	mov [temp.base + 0x3000 - 8*8], rax
+	; OS code/data
+	call allocator.alloc_2m
+	or rax, PAGE.PS or PAGE.US or PAGE.RW or PAGE.P
+	mov [temp.base + 0x3000 - 1*8], rax
+	; done setting up page tables
+	mov qword [temp.pde], 0
+	invlpg [temp.base]
+	mov cr3, r15
+	; copy OS code
+	mov rsi, [bootinfo.libos.start]
+	mov ecx, [bootinfo.libos.end  ]
+	mov rdi, init_libos.base
+	sub ecx, esi
+	shr ecx, 3
+	rep movsq
+	mov ecx, esi
+	not ecx
+	and ecx, (1 shl 21) - 1
+	shr ecx, 3
+	xor eax, eax
+	rep stosq
+	hlt
 
 .com1:
 	mov edx, COM1.IOBASE
@@ -146,4 +201,4 @@ allocator.sets: rw ALLOCATOR.SETS
 .super:         rw ALLOCATOR.SUPERSETS
 .end:
 
-dat.end:
+dat.end = dat + (1 shl 21)
