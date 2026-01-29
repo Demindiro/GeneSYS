@@ -2,6 +2,8 @@
 ; 0xffffffffc0000000 - 0xffffffffc0200000 : code  (RX)
 ;   0xffffffffc01fffe0 - 0xffffffffc0200000 : boot info
 ; 0xffffffffc0200000 - 0xffffffffc0e00000 : guard (unmapped)
+; 0xffffffffc0a00000 - 0xffffffffc0b00000 : allocator bitmap
+; 0xffffffffc0c00000 - 0xffffffffc0e00000 : guard (unmapped)
 ; 0xffffffffc0e00000 - 0xffffffffc1000000 : data  (RW)
 ;
 ; Two entire pages of
@@ -22,6 +24,8 @@
 
 ;; structure passed by the bootloader
 BOOTINFO.sizeof = 32
+
+allocator.bitmap = 0xffffffffc0a00000
 
 use64
 
@@ -87,6 +91,11 @@ exec:
 	; ... and immediately reset those bits + flush TLB
 	pop rdi
 	mov cr3, rdi
+
+	mov rax, [bootinfo.data_free]
+	mov [data_free], rax
+	call allocator.init
+
 .com1:
 	mov edx, COM1.IOBASE
 	call comx.init
@@ -107,6 +116,7 @@ include "../common/idt.asm"
 include "../common/gdt.asm"
 include "../common/comx.asm"
 include "../common/crc32c.asm"
+include "allocator.asm"
 
 idtr: dw idt.end - idt - 1
       dq idt
@@ -121,4 +131,12 @@ dat:
 ; "stack is reserved" :^)))))
 _stack: rb 1024
 .end:
+; free head, initialized to bootinfo.data_free
+data_free: dq ?
+rq 7  ; pad to cache line
+
+allocator.sets: rw ALLOCATOR.SETS
+.super:         rw ALLOCATOR.SUPERSETS
+.end:
+
 dat.end:
