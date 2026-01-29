@@ -272,6 +272,9 @@ main64:
 	add rsi, KERNEL.CODE.START - kernel_code
 	mov [rbx + BOOTINFO.memmap.start], rdi
 	mov [rbx + BOOTINFO.memmap.end  ], rsi
+	xor eax, eax
+	mov [rbx + BOOTINFO.libos.start], rax
+	mov [rbx + BOOTINFO.libos.end  ], rax
 	jmp KERNEL.CODE.START
 
 	include "../util/memmap.asm"

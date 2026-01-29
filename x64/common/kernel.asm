@@ -23,7 +23,7 @@
 
 
 ;; structure passed by the bootloader
-BOOTINFO.sizeof = 32
+BOOTINFO.sizeof = 48
 
 allocator.bitmap = 0xffffffffc0a00000
 
@@ -56,6 +56,10 @@ virtual at ($$ + (1 shl 21) - BOOTINFO.sizeof)
 	.memmap.start: dq ?
 	; the end (excl) address of the map with regular usable memory
 	.memmap.end: dq ?
+	; the start (incl) address of the initial libos
+	.libos.start: dq ?
+	; the end (excl) address of the initial libos
+	.libos.end:   dq ?
 end virtual
 exec:
 

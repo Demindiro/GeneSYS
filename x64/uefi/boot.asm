@@ -392,6 +392,9 @@ end virtual
 	mov [rbx + BOOTINFO.memmap.start], rcx
 	lea rcx, [rdx + rsi]
 	mov [rbx + BOOTINFO.memmap.end  ], rcx
+	xor eax, eax
+	mov [rbx + BOOTINFO.libos.start], rax
+	mov [rbx + BOOTINFO.libos.end  ], rax
 
 	; enter kernel
 	cli
