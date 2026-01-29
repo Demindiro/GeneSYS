@@ -163,3 +163,51 @@ allocator.init:
 	jne .count_superset
 	; done
 	ret
+
+; allocate a single 2M page.
+;
+; rax: page address base, or negative if none
+allocator.alloc_2m:
+	; scan superset
+	mov rsi, allocator.sets.super
+	lea rbx, [rsi + ALLOCATOR.SUPERSETS*2]
+@@: movzx edx, word [rsi]
+	test edx, edx
+	jnz .x
+	add rsi, 2
+	; note that we only need the "no pages free" check here
+	; as long as the counters are all correct
+	; hence this check will be omitted in the lower loops
+	cmp rsi, rbx
+	jne @b
+	; no pages free
+	mov rax, -1
+	ret
+.x:	; subtract one page from the superset
+	dec edx
+	mov [rsi], dx
+	; scan sets
+	sub esi, 0xffffffff and allocator.sets.super  ; index*2
+	lea rsi, [allocator.sets + rsi*8]             ; index*16
+@@:	movzx edx, word [rsi]
+	mov rdi, rsi
+	add rsi, 2
+	test edx, edx
+	jz @b
+	; substract one page from the set
+	dec edx
+	mov [rdi], dx
+	; scan bitmap
+	sub edi, 0xffffffff and allocator.sets  ; index*8*2
+	lea rsi, [allocator.bitmap + rdi*8]     ; index*8*16
+@@:	mov rdi, rsi
+	lodsq
+	bsf rdx, rax
+	jz @b
+	btr rax, rdx
+	mov [rdi], rax
+	sub rdi, allocator.bitmap
+	shl edi, 6 - 3
+	lea eax, [edi + edx]
+	shl rax, 21
+	ret

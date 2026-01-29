@@ -100,6 +100,9 @@ exec:
 	mov [data_free], rax
 	call allocator.init
 
+.load_libos:
+	call allocator.alloc_2m
+
 .com1:
 	mov edx, COM1.IOBASE
 	call comx.init
