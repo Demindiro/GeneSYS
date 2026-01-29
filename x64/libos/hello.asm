@@ -1,10 +1,10 @@
 use64
 
 @@:	mov eax, 1
-	lea rdi, [rip + s]
-	mov ecx, s.end - s
+	lea rsi, [s]
+	mov edx, s.end - s
 	syscall
 	jmp @b
 
-s: db "Hello world!"
+s: db "Hello world!", 10
 .end:

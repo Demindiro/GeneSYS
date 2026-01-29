@@ -33,6 +33,11 @@ init_libos.base  = (1 shl 30) - (1 shl 21)
 
 temp.pde = dat.end - 0x1000 + 8*3 ; TODO we provide guarantees about page table layout
 
+MSR.IA32_EFER = 0xc0000080
+IA32_EFER.SCE = 1 shl  0
+IA32_EFER.LME = 1 shl  8
+IA32_EFER.NXE = 1 shl 11
+
 use64
 
 org 0xffffffffc0000000
@@ -84,6 +89,11 @@ exec:
 	retfq
 @@:	lidt [idtr]
 
+	mov ecx, MSR.IA32_EFER
+	mov eax, IA32_EFER.SCE or IA32_EFER.LME
+	xor edx, edx
+	wrmsr
+
 .clear_identity_map:
 	; the kernel is designed to survive a (nearly) FUBAR system state.
 	; the identity map is arbitrarily large and might not be reliable,
@@ -105,6 +115,7 @@ exec:
 	mov rax, [bootinfo.data_free]
 	mov [data_free], rax
 	call allocator.init
+	call syscall.init
 
 .load_libos:
 	; allocate and initialize page table
@@ -156,7 +167,12 @@ exec:
 	shr ecx, 3
 	xor eax, eax
 	rep stosq
-	hlt
+.start_libos:
+	xor eax, eax
+	mov rcx, init_libos.base
+	irp x,edx,ebx,esp,ebp,esi,edi,r8,r9,r10,r11,r12,r13,r14,r15 { xor x, x }
+	irp x,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 { xorps xmm#x, xmm#x }
+	sysretq
 
 .com1:
 	mov edx, COM1.IOBASE
@@ -179,6 +195,7 @@ include "../common/gdt.asm"
 include "../common/comx.asm"
 include "../common/crc32c.asm"
 include "allocator.asm"
+include "syscall.asm"
 
 idtr: dw idt.end - idt - 1
       dq idt
@@ -195,7 +212,8 @@ _stack: rb 1024
 .end:
 ; free head, initialized to bootinfo.data_free
 data_free: dq ?
-rq 7  ; pad to cache line
+syscall.scratch: dq ?
+rq 6  ; pad to cache line
 
 allocator.sets: rw ALLOCATOR.SETS
 .super:         rw ALLOCATOR.SUPERSETS
