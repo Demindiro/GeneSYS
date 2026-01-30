@@ -1,7 +1,11 @@
 ; == kernel memory layout ==
 ; 0: 0xffffffffc0000000 - 0xffffffffc0200000 : code  (RX)
 ;      0xffffffffc01fffe0 - 0xffffffffc0200000 : boot info
-; 1: 0xffffffffc0200000 - 0xffffffffc0400000 : guard (unmapped)
+; 1: 0xffffffffc0200000 - 0xffffffffc0400000 : MMIO
+;      0xffffffffc0200000 - 0xffffffffc03fb000 : guard (unmapped)
+;      0xffffffffc03fb000 - 0xffffffffc03fc000 : LAPIC
+;      0xffffffffc03fd000 - 0xffffffffc03fe000 : guard (unmapped)
+;      0xffffffffc03ff000 - 0xffffffffc0400000 : IOAPIC
 ; 2: 0xffffffffc0400000 - 0xffffffffc0600000 : guard (unmapped)
 ; 3: 0xffffffffc0600000 - 0xffffffffc0800000 : temp page (unmapped/RW)
 ; 4: 0xffffffffc0800000 - 0xffffffffc0a00000 : guard (unmapped)
@@ -36,14 +40,18 @@ paging.pml4      = dat.end - 0x1000
 paging.pdp       = dat.end - 0x2000
 paging.pd        = dat.end - 0x3000
 paging.pt_bitmap = dat.end - 0x4000
+paging.pt_mmio   = dat.end - 0x5000
 paging.pml4.pdp     = paging.pml4 + 8*511
 paging.pdp.pd       = paging.pdp  + 8*511
 paging.pd.code      = paging.pd + 8*0
+paging.pd.pt_mmio   = paging.pd + 8*1
 paging.pd.temp      = paging.pd + 8*3
 paging.pd.pt_bitmap = paging.pd + 8*5
 paging.pd.data      = paging.pd + 8*7
+paging.pt_mmio.ioapic = paging.pt_mmio + 8*511
+paging.pt_mmio.lapic  = paging.pt_mmio + 8*509
 
-irp x,pml4,pdp,pd,pt_bitmap { paging_phys.#x = (2 shl 21) + (paging.#x - dat.end) }
+irp x,pml4,pdp,pd,pt_bitmap,pt_mmio { paging_phys.#x = (2 shl 21) + (paging.#x - dat.end) }
 
 MSR.IA32_EFER = 0xc0000080
 IA32_EFER.SCE = 1 shl  0
@@ -116,6 +124,8 @@ exec:
 	mov [paging.pd.data], rax
 	lea rax, [rbx + paging_phys.pt_bitmap + PAGE.A + PAGE.D + PAGE.RW + PAGE.P]
 	mov [paging.pd.pt_bitmap], rax
+	lea rax, [rbx + paging_phys.pt_mmio   + PAGE.A + PAGE.D + PAGE.RW + PAGE.P]
+	mov [paging.pd.pt_mmio  ], rax
 	; PDP
 	lea rax, [rbx + paging_phys.pd  + PAGE.A + PAGE.D + PAGE.RW + PAGE.P]
 	mov [paging.pdp.pd], rax
@@ -138,6 +148,9 @@ exec:
 	call allocator.init
 	call syscall.init
 	mov qword [syslog.head], 0
+	mov edx, COM1.IOBASE
+	call comx.init
+	call ioapic.init
 
 .load_libos:
 	; allocate and initialize page table
@@ -219,6 +232,7 @@ include "../common/crc32c.asm"
 include "allocator.asm"
 include "syscall.asm"
 include "syslog.asm"
+include "ioapic.asm"
 
 idtr: dw idt.end - idt - 1
       dq idt

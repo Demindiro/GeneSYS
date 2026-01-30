@@ -17,6 +17,11 @@ COMx.scratch     = 7
 COMx.STAT_LINE.DR   = 1 shl 0
 COMx.STAT_LINE.THRE = 1 shl 5
 
+COMx.INTR.RX_AVAIL     = 1 shl 0
+COMx.INTR.TX_EMPTY     = 1 shl 1
+COMx.INTR.RX_STATUS    = 1 shl 2
+COMx.INTR.MODEM_STATUS = 1 shl 3
+
 ; rdx: I/O base
 ;
 ; rdx: I/O base
@@ -34,7 +39,7 @@ macro f reg, val {
 	f COMx.baud_lo, 1 ; 115200
 	f COMx.baud_hi, 0
 	f COMx.ctrl_line, (1 shl 3) or (1 shl 2) or (3 shl 0) ; 8E2
-	f COMx.intr_enable, 0 ; don't bother with interrupts for now
+	f COMx.intr_enable, COMx.INTR.RX_AVAIL
 	f COMx.ctrl_fifo, 7 ; clear buffers and enable
 	f COMx.ctrl_modem, 01011b ; DTR, DTS, OUT2 (IRQ)
 	add edx, -x

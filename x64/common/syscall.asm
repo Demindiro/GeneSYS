@@ -59,7 +59,7 @@ syscall.log:
 	ret
 
 syscall.halt:
-	mov r8, syslog.buffer
+	sti
 	hlt
 	ret
 
