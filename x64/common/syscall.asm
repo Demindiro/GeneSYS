@@ -23,13 +23,47 @@ syscall.init:
 syscall.entry64:
 	mov [syscall.scratch], rsp
 	mov rsp, _stack.end
-	irp x,rdx,rsi,rdi,rcx { push x }
+	irp x,rcx,rbx,rsi,rdi { push x }
 
-	mov ecx, edx
-	mov rdx, COM1.IOBASE
-	call comx.write
+	dec eax
+	cmp eax, SYSCALL.MAX_SYSID
+	ja .bad_id
+	call qword [syscall.table + rax*8]
 
-	irp x,rcx,rdi,rsi,rdx { pop x }
+	irp x,rdi,rsi,rbx,rcx { pop x }
 	mov rsp, [syscall.scratch]
-	xor eax, eax
 	sysretq
+
+.bad_id:
+@@:	hlt
+	jmp @b
+
+x = 0
+macro f id, routine {
+	x = x + 1
+	assert x = id
+	dq syscall.#routine
+}
+syscall.table:
+	f 1, log
+	f 2, halt
+	f 3, identify
+SYSCALL.MAX_SYSID = x
+purge f, x
+
+syscall.log:
+	push rdx
+	mov rcx, rdx
+	call syslog.push
+	pop rdx
+	ret
+
+syscall.halt:
+	mov r8, syslog.buffer
+	hlt
+	ret
+
+syscall.identify:
+	mov rax, "GeneSYS"
+	mov rdx, 0x20260130
+	ret

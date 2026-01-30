@@ -1,10 +1,29 @@
 use64
 
-@@:	mov eax, 1
+SYS.LOG      = 1
+SYS.HALT     = 2
+SYS.IDENTIFY = 3
+
+	mov eax, SYS.LOG
 	lea rsi, [s]
 	mov edx, s.end - s
 	syscall
-	jmp @b
+
+	mov eax, SYS.IDENTIFY
+	syscall
+
+	lea rsi, [scratch]
+	mov [rsi], rax
+	mov edx, 9
+	mov eax, SYS.LOG
+	syscall
+
+	mov eax, SYS.HALT
+	syscall
+	ud2
 
 s: db "Hello world!", 10
 .end:
+
+scratch: dq 0
+db 10
