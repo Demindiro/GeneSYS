@@ -53,16 +53,13 @@ purge f, x
 
 syscall.log:
 	push rdx
-	push rsi
-	mov ecx, edx
-	mov rdx, COM1.IOBASE
-	call comx.write
-	pop rax
+	mov rcx, rdx
+	call syslog.push
 	pop rdx
-	sub rax, rsi
 	ret
 
 syscall.halt:
+	mov r8, syslog.buffer
 	hlt
 	ret
 

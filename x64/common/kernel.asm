@@ -116,6 +116,7 @@ exec:
 	mov [data_free], rax
 	call allocator.init
 	call syscall.init
+	mov qword [syslog.head], 0
 
 .load_libos:
 	; allocate and initialize page table
@@ -196,6 +197,7 @@ include "../common/comx.asm"
 include "../common/crc32c.asm"
 include "allocator.asm"
 include "syscall.asm"
+include "syslog.asm"
 
 idtr: dw idt.end - idt - 1
       dq idt
@@ -213,7 +215,11 @@ _stack: rb 1024
 ; free head, initialized to bootinfo.data_free
 data_free: dq ?
 syscall.scratch: dq ?
-rq 6  ; pad to cache line
+syslog.head: dq ?
+rb ((-$) and 63)  ; pad to cache line
+
+syslog.buffer: rb (1 shl 17)
+.end:
 
 allocator.sets: rw ALLOCATOR.SETS
 .super:         rw ALLOCATOR.SUPERSETS
