@@ -12,10 +12,8 @@ x = 0
 macro f nr, target {
 	assert nr = x
 	x = x + 1
-	dw (target shr  0) and 0xffff
-	dw 0
-	dw 0
-	dw (target shr 16) and 0xffff
+	dw (target shr  0) and 0xffff, GDT.KERNEL_CS
+	dw 0x8f00, (target shr 16) and 0xffff
 	dd (target shr 32) and 0xffffffff
 	dd 0
 }
@@ -53,10 +51,17 @@ f  28, idt.ex_hv
 f  29, idt.ex_vc
 f  30, idt.ex_sx
 f  31, idt.ex_reserved
-repeat 256 - 32 - 1
+repeat 248 - 32
 	f (32 + (% - 1)), idt.intr_unmapped
 end repeat
-f 255, idt.intr_com1
+f 248, idt.intr_com1
+f 249, idt.intr_unmapped
+f 250, idt.intr_unmapped
+f 251, idt.intr_unmapped
+f 252, idt.intr_unmapped
+f 253, idt.intr_unmapped
+f 254, idt.intr_unmapped
+f 255, idt.intr_unmapped
 .end: assert x = 256
 purge f, x
 
