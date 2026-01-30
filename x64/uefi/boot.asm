@@ -11,6 +11,8 @@ IMAGE_SCN_CNT_CODE    = 0x20
 IMAGE_SCN_MEM_EXECUTE = 0x20000000
 IMAGE_SCN_MEM_READ    = 0x40000000
 
+MEMMAP.MARGIN = 0x4000
+
 dos:
 	db "MZ"
 	times 58 db 0
@@ -279,29 +281,6 @@ end virtual
 	mov al, 0xcc
 	rep stosb
 
-	; data
-	xor eax, eax
-	mov ecx, 1 shl 21
-	rep stosb
-
-	; PD: 0 -> code, 7 -> data
-	lea rax, [rdi - (2 shl 21) + PAGE.P + PAGE.PS + PAGE.G]
-	lea rdx, [rdi - (1 shl 21) + PAGE.P + PAGE.PS + PAGE.G + PAGE.RW]
-	mov [rdi - 0x1000 + (8*0)], rax
-	mov [rdi - 0x1000 + (8*7)], rdx
-	; PDP: 511
-	lea rax, [rdi - 0x1000 + PAGE.P + PAGE.RW]
-	mov [rdi - 0x2000 + (511*8)], rax
-	; PML4: 511
-	lea rax, [rdi - 0x2000 + PAGE.P + PAGE.RW]
-	mov [rdi - 0x3000 + (511*8)], rax
-	; identity map
-	mov rsi, cr3
-	sub rdi, 0x3000
-	mov r12, rdi
-	mov ecx, 256
-	rep movsq
-
 	uefi.trace "GetMemoryMap + ExitBootServices" ; no tracing or any UEFI routines between these two calls!
 	; attempt stack alloc to simplify things
 	; we have at least 128KiB, use half of that
@@ -335,6 +314,8 @@ end virtual
 
 	push rdx
 .copy_memmap:
+	; TODO currently, we can store a maximum of "only" (0x4000 - 64) / 16 = 1020 entries
+	; ... probably enough, but we should add more checks. Or put it elsewhere.
 	mov rdi, [.kernel_phys]
 	add rdi, (1 shl 21) - BOOTINFO.sizeof
 	lea rsi, [rsp + 8]
@@ -361,6 +342,18 @@ end virtual
 	call memmap.radixsort
 	call memmap.merge
 
+	mov rax, [.kernel_phys]
+	lea rbx, [rax + (1 shl 21) - BOOTINFO.sizeof]
+	; we used physical addresses while populating the memory map
+	; to avoid touching the UEFI page table, but the kernel expects
+	; virtual addresses
+	mov rdx, KERNEL.CODE.START
+	sub rdx, rax
+	lea rax, [rdx + rdi]
+	lea rcx, [rdx + rsi]
+	mov [rbx + BOOTINFO.memmap.start], rax
+	mov [rbx + BOOTINFO.memmap.end  ], rcx
+
 	; 7.4.6 EFI_BOOT_SERVICES.ExitBootServices()
 	; EFI_STATUS (EFIAPI *EFI_EXIT_BOOT_SERVICES) (
 	;   IN EFI_HANDLE ImageHandle,
@@ -373,33 +366,58 @@ end virtual
 	eficall qword [r14 + EFI_BOOT_SERVICES.ExitBootServices]
 	uefi.assertgez rax, "ExitBootServices failed"
 
+.pagetable:
+	cli
+	mov rbx, [.kernel_phys]
+	mov rdi, rbx
+	; leave 4K for memory map + bootinfo
+	add rdi, (1 shl 21) - MEMMAP.MARGIN - (0x1000 * 3)
+	push rdi
+	mov ecx, 512 * 3
+	xor eax, eax
+	rep stosq
+	pop rdi
+	; PD: 0 -> code, 7 -> data
+	lea rax, [rbx + (0 shl 21) + PAGE.A + PAGE.D + PAGE.P + PAGE.PS + PAGE.G]
+	lea rdx, [rbx + (1 shl 21) + PAGE.A + PAGE.D + PAGE.P + PAGE.PS + PAGE.G + PAGE.RW]
+	mov [rdi + (8*0)], rax
+	mov [rdi + (8*7)], rdx
+	; PDP: 511
+	lea rdx, [rdi + PAGE.A + PAGE.D + PAGE.P + PAGE.RW]
+	add rdi, 0x1000
+	mov [rdi + (511*8)], rdx
+	; PML4: 511
+	lea rdx, [rdi + PAGE.A + PAGE.D + PAGE.P + PAGE.RW]
+	add rdi, 0x1000
+	mov [rdi + (511*8)], rdx
+	; temporary PML4 with identity map
+	sub rsp,  0x1000
+	and rsp, -0x1000
+	mov rdi, rsp
+	mov rsi, cr3
+	mov ecx, 256
+	rep movsq
+	mov ecx, 255
+	xor eax, eax
+	rep stosq
+	mov [rdi], rdx
+	mov cr3, rsp
+
 .bootinfo:
 	pop rsi   ; memmap end
 	pop rdi   ; memmap start
 	mov rax, [.kernel_phys]
-	; bootinfo must be put at end of code regio
+	; bootinfo must be put at end of code region
 	lea rbx, [rax + ((1 shl 21) - BOOTINFO.sizeof)]
 	mov [rbx + BOOTINFO.phys_base   ], rax
-	; we used physical addresses while populating the memory map
-	; to avoid touching the UEFI page table, but the kernel expects
-	; virtual addresses
-	mov rdx, KERNEL.DATA.START - (1 shl 21)
-	sub rdx, rax
-	; cr3 points to the very last page we allocated
-	lea rcx, [rdx + r12]
-	mov [rbx + BOOTINFO.data_free   ], rcx
+	lea rcx, [rax + (1 shl 21) - MEMMAP.MARGIN - 0x1000]
+	mov [rbx + BOOTINFO.init_pagetable], rcx
 	mov rdx, KERNEL.CODE.START
 	sub rdx, rax
-	lea rcx, [rdx + rdi]
-	mov [rbx + BOOTINFO.memmap.start], rcx
-	lea rcx, [rdx + rsi]
-	mov [rbx + BOOTINFO.memmap.end  ], rcx
 	mov qword [rbx + BOOTINFO.libos.start], KERNEL.CODE.START + (kernel.libos - kernel)
 	mov qword [rbx + BOOTINFO.libos.end  ], KERNEL.CODE.START + (kernel.end   - kernel)
 
 	; enter kernel
-	cli
-	mov cr3, r12
 	mov rbp, KERNEL.CODE.START
 	jmp rbp
 

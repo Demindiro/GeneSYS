@@ -5,7 +5,7 @@ KERNEL.DATA.END   = KERNEL.DATA.START + (1 shl 21)
 
 BOOTINFO.sizeof       = 48
 BOOTINFO.phys_base    =  0
-BOOTINFO.data_free    =  8
+BOOTINFO.init_pagetable =  8
 BOOTINFO.memmap.start = 16
 BOOTINFO.memmap.end   = 24
 BOOTINFO.libos.start  = 32
