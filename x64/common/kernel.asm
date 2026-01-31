@@ -88,6 +88,21 @@ virtual at (exec.end - BOOTINFO.sizeof)
 	.libos.end:   dq ?
 end virtual
 exec:
+	; clear data region
+	mov ecx, (dat.end - dat) / 8
+	mov rdi, dat
+	xor eax, eax
+	rep stosq
+
+	; copy GDT to data region
+	; the CPU insists on setting 0x89 to 0x8b in TSS segment
+	; and we can't load it with 0x8b already set,
+	; so it must be put in a R/W region.
+	mov rsi, init_gdt
+	mov rdi, gdt
+	mov ecx, (gdt.end - gdt) / 8
+	rep movsq
+
 	lgdt [gdtr]
 	mov ax, GDT.KERNEL_SS
 	mov ss, ax
@@ -101,6 +116,10 @@ exec:
 	push rax
 	retfq
 @@:	lidt [idtr]
+	; TSS
+	mov word [tss.iopb], tss.end - tss
+	mov ax, GDT.TSS
+	ltr ax
 
 	; load initial page table and ensure all global mappings are flushed.
 	mov rax, cr4
@@ -108,12 +127,6 @@ exec:
 	mov cr4, rax
 	mov rax, [bootinfo.init_pagetable]
 	mov cr3, rax
-
-	; clear data region
-	mov ecx, (dat.end - dat) / 8
-	mov rdi, dat
-	xor eax, eax
-	rep stosq
 
 	; construct new page table
 	mov rbx, [bootinfo.phys_base]
@@ -256,6 +269,22 @@ syslog.buffer: rb (1 shl 17)
 
 allocator.sets: rw ALLOCATOR.SETS
 .super:         rw ALLOCATOR.SUPERSETS
+.end:
+
+rb ((-$) and 7)
+
+gdt: rb init_gdt.end - init_gdt
+.end:
+
+	dd ?
+tss:
+	dd ?
+.rsp: dq ?, ?, ?
+	dd 0, 0
+	irp x,1,2,3,4,5,6,7 { .ist#x: dq ? }
+	dd ?, ?
+	dw ?
+.iopb: dw ?
 .end:
 
 dat.end = dat + (1 shl 21)
