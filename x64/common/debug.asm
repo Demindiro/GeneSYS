@@ -53,16 +53,16 @@ debug.handle_tx:
 	je comx.disable_tx_intr
 	add rsi, debug.tx.buffer
 	; just in case of spurious/shared interrupt
-@@:	comx.jmp_if_write_full .f
+@@:	comx.jmp_if_write_full .e
 	lodsb
 	comx.write_byte
 	test al, al
-	jz .f
+	jnz @b
+	mov word [debug.tx.cur], DEBUG.TX.BUFFER_SIZE
+	jmp comx.disable_tx_intr
 .e:	sub si, debug.tx.buffer and 0xffff
 	mov [debug.tx.cur], si
 	ret
-.f:	mov word [debug.tx.cur], DEBUG.TX.BUFFER_SIZE
-	jmp comx.disable_tx_intr
 
 times ((-$) and 7) int3
 debug.commands:
@@ -100,8 +100,9 @@ debug.tx.send:
 	jnz @b
 .n:	mov eax, edx
 	sub eax, esi
-	stosb
 	mov ecx, eax
+	inc eax
+	stosb
 	rep movsb
 	cmp rsi, rbx
 	jnz .l
