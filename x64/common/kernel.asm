@@ -164,6 +164,7 @@ exec:
 	mov edx, COM1.IOBASE
 	call comx.init
 	call ioapic.init
+	call lapic.init
 
 .load_libos:
 	; allocate and initialize page table
@@ -230,6 +231,7 @@ include "allocator.asm"
 include "syscall.asm"
 include "syslog.asm"
 include "ioapic.asm"
+include "lapic.asm"
 
 idtr: dw idt.end - idt - 1
       dq idt

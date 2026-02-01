@@ -1,0 +1,60 @@
+LAPIC.PHYS_BASE = 0xfee00000
+
+macro f offset, name { lapic.#name = 0xffffffffc03fd000 + (offset * 0x10) }
+	f 0x02, id
+	f 0x03, version
+	f 0x08, tpr
+	f 0x09, apr
+	f 0x0a, ppr
+	f 0x0b, eoi
+	f 0x0c, rrd
+	f 0x0d, ldr
+	f 0x0e, dfr
+	f 0x0f, sivr
+	f 0x10, isr0
+	f 0x11, isr1
+	f 0x12, isr2
+	f 0x13, isr3
+	f 0x14, isr4
+	f 0x15, isr5
+	f 0x16, isr6
+	f 0x17, isr7
+	f 0x18, tmr0
+	f 0x19, tmr1
+	f 0x1a, tmr2
+	f 0x1b, tmr3
+	f 0x1c, tmr4
+	f 0x1d, tmr5
+	f 0x1e, tmr6
+	f 0x1f, tmr7
+	f 0x20, irr0
+	f 0x21, irr1
+	f 0x22, irr2
+	f 0x23, irr3
+	f 0x24, irr4
+	f 0x25, irr5
+	f 0x26, irr6
+	f 0x27, irr7
+	f 0x28, esr
+	f 0x2f, lvt_cmci
+	f 0x30, icr0
+	f 0x31, icr1
+	f 0x32, lvt_timer
+	f 0x33, lvt_thermal
+	f 0x34, lvt_perfmon
+	f 0x35, lvt_lint0
+	f 0x36, lvt_lint1
+	f 0x37, lvt_error
+	f 0x38, timer_init
+	f 0x39, timer_cur
+	f 0x3e, timer_div
+purge f
+
+lapic.init:
+	; map IOAPIC
+	mov dword [paging.pt_mmio.lapic], LAPIC.PHYS_BASE + PAGE.D + PAGE.A + PAGE.RW + PAGE.G + PAGE.P
+	ret
+
+macro lapic.eoi {
+	mov dword [lapic.eoi], 0
+}
