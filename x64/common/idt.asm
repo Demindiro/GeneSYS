@@ -9,14 +9,15 @@ IDT.DPL.3     =  3 shl 13
 IDT.P         =  1 shl 15
 
 x = 0
-macro f nr, target {
+macro g nr, ist, target {
 	assert nr = x
 	x = x + 1
 	dw (target shr  0) and 0xffff, GDT.KERNEL_CS
-	dw 0x8f00, (target shr 16) and 0xffff
+	dw 0x8f00 or ist, (target shr 16) and 0xffff
 	dd (target shr 32) and 0xffffffff
 	dd 0
 }
+macro f nr, target { g nr, 0, target }
 align 64
 idt:
 f   0, idt.ex_dt
@@ -33,7 +34,7 @@ f  10, idt.ex_ts
 f  11, idt.ex_np
 f  12, idt.ex_ss
 f  13, idt.ex_gp
-f  14, idt.ex_pf
+g  14, 1, idt.ex_pf
 f  15, idt.ex_reserved
 f  16, idt.ex_mf
 f  17, idt.ex_ac
@@ -63,7 +64,7 @@ f 253, idt.intr_unmapped
 f 254, idt.intr_unmapped
 f 255, idt.intr_unmapped
 .end: assert x = 256
-purge f, x
+purge f, g, x
 
 
 idt.ex_reserved:

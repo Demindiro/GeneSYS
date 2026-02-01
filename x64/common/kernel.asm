@@ -118,6 +118,8 @@ exec:
 @@:	lidt [idtr]
 	; TSS
 	mov word [tss.iopb], tss.end - tss
+	mov qword [tss.rsp0], _stack.end
+	mov qword [tss.ist1], _stack.end
 	mov ax, GDT.TSS
 	ltr ax
 
@@ -266,8 +268,8 @@ gdt: rb init_gdt.end - init_gdt
 	dd ?
 tss:
 	dd ?
-.rsp: dq ?, ?, ?
-	dd 0, 0
+	irp x,0,1,2 { .rsp#x: dq ? }
+	dd ?, ?
 	irp x,1,2,3,4,5,6,7 { .ist#x: dq ? }
 	dd ?, ?
 	dw ?
