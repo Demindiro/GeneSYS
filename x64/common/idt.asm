@@ -13,7 +13,7 @@ macro g nr, ist, target {
 	assert nr = x
 	x = x + 1
 	dw (target shr  0) and 0xffff, GDT.KERNEL_CS
-	dw 0x8f00 or ist, (target shr 16) and 0xffff
+	dw 0x8e00 or ist, (target shr 16) and 0xffff
 	dd (target shr 32) and 0xffffffff
 	dd 0
 }
