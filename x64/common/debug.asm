@@ -83,7 +83,7 @@ debug.tx.send:
 	lea rbx, [rsi + rcx + 4]
 	call crc32c
 	stosd
-	; COBS encode and store the length.
+	; COBS encode
 	; We could do the encoding during transmission, i.e. zero-copy,
 	; but it is very hard to get right (in assembly) as we need to look
 	; up to 254 bytes ahead, then cache that knowledge.
@@ -91,22 +91,28 @@ debug.tx.send:
 	mov rdi, debug.tx.buffer.extra
 	mov rsi, debug.tx.buffer
 .l:	mov rdx, rsi
-	cmp rdx, rbx
-	jz .n
-@@:	cmp byte [rdx], 0
-	jz .n
+@@:	cmp rdx, rbx
+	jz .e
+	movzx eax, byte [rdx]
 	inc rdx
-	cmp rdx, rbx
+	test al, al
 	jnz @b
-.n:	mov eax, edx
+	mov eax, edx
+	sub eax, esi
+	stosb
+	mov ecx, eax
+	dec ecx
+	rep movsb
+	inc rsi
+	cmp rsi, rbx
+	jnz .l
+.e:	mov eax, edx
 	sub eax, esi
 	mov ecx, eax
 	inc eax
 	stosb
 	rep movsb
-	cmp rsi, rbx
-	jnz .l
-.e:	xor eax, eax
+	xor eax, eax
 	stosb
 	mov word [debug.tx.cur], -8
 	mov edx, COM1.IOBASE
