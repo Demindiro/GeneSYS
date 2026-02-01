@@ -12,19 +12,47 @@ def crc32c(data):
 def encode_cobs(data):
     x = []
     nx = []
+    def f(n):
+        x.append(n)
+        x.extend(nx)
+        nx.clear()
     for b in data:
         if b == 0:
-            x.append(1 + len(nx))
-            x.extend(nx)
+            f(1 + len(nx))
         else:
             nx.append(b)
-    x.append(1 + len(nx))
-    x.extend(nx)
+        if len(nx) >= 254:
+            f(0xff)
+    if nx:
+        f(len(nx))
     x.append(0)
     return bytes(x)
 
+def decode_cobs(packet):
+    r = []
+    n = 0
+    nn = 255
+    for i in range(len(packet) + 1):
+        x = packet[i]
+        if x == 0:
+            assert i == len(packet) - 1
+            break
+        if n == 0:
+            if nn != 255:
+                r.append(0)
+            nn = x
+            n = min(x, 254)
+        else:
+            r.append(x)
+            n -= 1
+    return bytes(r)
+
 def encode(data):
     return encode_cobs(data + crc32c(data).to_bytes(4, 'little'))
+
+def decode(data):
+    data = decode_cobs(data)
+    return data[:-4]
 
 def connect(path):
     import socket
@@ -37,24 +65,47 @@ def reset(sock):
     sock.sendall(b'\0')
 
 def cmd_echo(sock, data):
-    print(encode(b'\0' + data))
-    print(encode(b'\0' + data).hex())
+    data = data.encode('utf-8')
     sock.sendall(encode(b'\0' + data))
+    r = b''
+    print('waiting', end='', flush=True)
+    while True:
+        x = sock.recv(1)
+        print('.', end='', flush=True)
+        r += x
+        if x in (b'\0', b''):
+            break
+    print()
+    want = encode(data)
+    print('want:', want)
+    print('got: ', r)
+    print('OK' if want == r else 'FAIL')
 
-def main(path):
+def main(path, subcmd, *args):
     import socket
     s = connect(path)
     reset(s)
-    cmd_echo(s, b'123456789')
-    while True:
-        c = s.recv(1)
-        if not c:
-            break
-        print(c)
+    {
+        'echo': cmd_echo,
+    }[subcmd](s, *args)
     # workaround QEMU apparently forgetting to set POLLIN
     # whenever POLLHUP is passed too.
     time.sleep(0.1)
 
+def _test_cobs():
+    cases = [
+        b'',
+        b'123456789',
+        b'x' * 254,
+        b'y' * 255,
+        b'z' * 256,
+    ]
+    for x in cases:
+        y = encode_cobs(x)
+        z = decode_cobs(y)
+        assert x == z, f'\n{x}\n\t<>\n{z}\n\t:\n{y}'
+
 if __name__ == '__main__':
+    _test_cobs()
     import sys, time
     main(*sys.argv[1:])
