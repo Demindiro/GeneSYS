@@ -77,7 +77,7 @@ idt.ex_db:
 idt.ex_nmi:
 	hlt
 idt.ex_bp:
-	hlt
+	iretq
 idt.ex_of:
 	hlt
 idt.ex_br:
