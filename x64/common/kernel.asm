@@ -165,6 +165,7 @@ exec:
 	mov qword [syslog.head], 0
 	mov edx, COM1.IOBASE
 	call comx.init
+	call debug.init
 	call ioapic.init
 	call lapic.init
 
@@ -226,13 +227,13 @@ exec:
 	sysretq
 
 include "../common/gdt.asm"
-include "../common/comx.asm"
 include "../common/crc32c.asm"
 include "allocator.asm"
 include "syscall.asm"
 include "syslog.asm"
 include "ioapic.asm"
 include "lapic.asm"
+include "comx.asm"
 include "debug.asm"
 include "idt.asm"
 
@@ -276,9 +277,10 @@ tss:
 .iopb: dw ?
 .end:
 
+debug.tx.buffer.extra: rb 8  ; extra bytes for COBS stuffing
 debug.tx.buffer: rb DEBUG.TX.BUFFER_SIZE
 debug.rx.buffer: rb DEBUG.RX.BUFFER_SIZE
-debug.tx.len: dw ?
+debug.tx.cur: dw ?  ; signed!!
 debug.rx.len: dw ?
 debug.rx.cap: dw ?
 debug.rx.prev: db ?

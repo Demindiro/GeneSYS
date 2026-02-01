@@ -2,6 +2,8 @@
 ; rcx: data len (in bytes)
 ;
 ; eax: result
+; ecx, edx: clobber
+; rsi, rdi: data end
 crc32c:
 .POLY = 0x82f63b78
 	mov eax, -1

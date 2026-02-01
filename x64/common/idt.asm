@@ -123,7 +123,7 @@ idt.intr_unmapped:
 idt.intr_com1:
 	cld
 	irp x,rax,rcx,rdx,rbx,rsi,rdi { push x }
-	call debug.handle_rx
+	call debug.handle
 	irp x,rdi,rsi,rbx,rdx,rcx,rax { pop  x }
 	lapic.eoi
 	iretq

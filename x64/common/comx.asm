@@ -119,6 +119,21 @@ macro comx.read_byte target_ifnone {
 }
 
 ; rdx: I/O base
+macro comx.jmp_if_write_full target {
+	call comx._stat_line
+	test al, COMx.STAT_LINE.THRE
+	jz target
+}
+
+; rdx: I/O base
+;  al: byte
+;
+; rdx: I/O base
+macro comx.write_byte {
+	out dx, al
+}
+
+; rdx: I/O base
 ;
 ; rdx: I/O base
 ; al: status
@@ -126,4 +141,28 @@ comx._stat_line:
 	add edx, COMx.stat_line
 	in al, dx
 	sub edx, COMx.stat_line
+	ret
+
+; rdx: I/O base
+;
+; rdx: I/O base
+; rax: clobber
+comx.enable_tx_intr:
+	add edx, COMx.intr_enable
+	in  al, dx
+	or  al, COMx.INTR.TX_EMPTY
+	out dx, al
+	sub edx, COMx.intr_enable
+	ret
+
+; rdx: I/O base
+;
+; rdx: I/O base
+; rax: clobber
+comx.disable_tx_intr:
+	add edx, COMx.intr_enable
+	in  al, dx
+	and al, not COMx.INTR.TX_EMPTY
+	out dx, al
+	sub edx, COMx.intr_enable
 	ret
