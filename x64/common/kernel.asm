@@ -223,7 +223,6 @@ exec:
 	irp x,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 { xorps xmm#x, xmm#x }
 	sysretq
 
-include "../common/idt.asm"
 include "../common/gdt.asm"
 include "../common/comx.asm"
 include "../common/crc32c.asm"
@@ -232,6 +231,7 @@ include "syscall.asm"
 include "syslog.asm"
 include "ioapic.asm"
 include "lapic.asm"
+include "idt.asm"
 
 idtr: dw idt.end - idt - 1
       dq idt

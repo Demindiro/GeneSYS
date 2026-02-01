@@ -120,4 +120,5 @@ idt.intr_unmapped:
 	iretq
 
 idt.intr_com1:
-	hlt
+	lapic.eoi
+	iretq

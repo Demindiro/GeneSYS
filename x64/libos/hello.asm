@@ -18,9 +18,9 @@ SYS.IDENTIFY = 3
 	mov eax, SYS.LOG
 	syscall
 
-	mov eax, SYS.HALT
+@@:	mov eax, SYS.HALT
 	syscall
-	ud2
+	jmp @b
 
 s: db "Hello world!", 10
 .end:
