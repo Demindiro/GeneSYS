@@ -231,6 +231,7 @@ include "syscall.asm"
 include "syslog.asm"
 include "ioapic.asm"
 include "lapic.asm"
+include "debug.asm"
 include "idt.asm"
 
 idtr: dw idt.end - idt - 1
@@ -272,5 +273,12 @@ tss:
 	dw ?
 .iopb: dw ?
 .end:
+
+debug.tx.buffer: rb DEBUG.TX.BUFFER_SIZE
+debug.rx.buffer: rb DEBUG.RX.BUFFER_SIZE
+debug.tx.len: dw ?
+debug.rx.len: dw ?
+debug.rx.cap: dw ?
+debug.rx.prev: db ?
 
 dat.end = dat + (1 shl 21)

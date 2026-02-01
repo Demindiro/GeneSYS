@@ -108,6 +108,18 @@ comx.read:
 
 ; rdx: I/O base
 ;
+; rax: byte
+; rdx: I/O base
+macro comx.read_byte target_ifnone {
+	call comx._stat_line
+	test al, COMx.STAT_LINE.DR
+	jz target_ifnone
+	xor eax, eax
+	in al, dx
+}
+
+; rdx: I/O base
+;
 ; rdx: I/O base
 ; al: status
 comx._stat_line:
