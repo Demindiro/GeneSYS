@@ -32,10 +32,10 @@ debug.handle_rx:
 	inc ecx
 	jmp .l
 .process_packet:
-	; if the packet is 5 bytes or less (command ID + CRC32C),
+	; if the packet is less than 5 bytes (command ID + CRC32C),
 	; we can't do anything with it so just discard
 	sub ecx, 5
-	jbe .f
+	jb .f
 	; TODO validate crc32
 	mov rsi, debug.rx.buffer
 	lodsb
