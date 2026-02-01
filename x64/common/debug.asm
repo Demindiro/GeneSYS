@@ -54,6 +54,7 @@ debug.handle_rx:
 	call qword [debug.commands + rax*8]
 .f:	xor ecx, ecx
 	mov byte [debug.rx.prev], 0xff
+	mov word [debug.rx.cap], cx
 .e:	mov word [debug.rx.len], cx
 	ret
 
