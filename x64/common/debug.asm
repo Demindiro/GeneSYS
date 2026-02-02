@@ -34,14 +34,21 @@ debug.handle_rx:
 .process_packet:
 	; if the packet is less than 5 bytes (command ID + CRC32C),
 	; we can't do anything with it so just discard
-	sub ecx, 5
+	cmp ecx, 5
 	jb .f
-	; TODO validate crc32
+	; validate CRC
 	mov rsi, debug.rx.buffer
-	lodsb
+	mov ebx, ecx
+	call crc32c
+	cmp eax, crc32c.VALIDATE
+	jne .f
+	; get command ID
+	movzx eax, byte [debug.rx.buffer]
 	; don't call invalid commands
 	cmp al, DEBUG.COMMAND_MAX - 1
 	ja .f
+	lea ecx, [ebx - 5]
+	mov rsi, debug.rx.buffer + 1
 	call qword [debug.commands + rax*8]
 .f:	xor ecx, ecx
 	mov byte [debug.rx.prev], 0xff

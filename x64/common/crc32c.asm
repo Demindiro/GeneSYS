@@ -6,6 +6,7 @@
 ; rsi, rdi: data end
 crc32c:
 .POLY = 0x82f63b78
+.VALIDATE = 0x48674bc7
 	mov eax, -1
 	jrcxz .e
 	lea rdi, [rsi + rcx]
