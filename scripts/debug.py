@@ -76,7 +76,7 @@ def cmd_echo(sock, data):
         if x in (b'\0', b''):
             break
     print()
-    want = encode(data)
+    want = encode(b'\0' + data)
     print('want:', want)
     print('got: ', r)
     print('OK' if want == r else 'FAIL')

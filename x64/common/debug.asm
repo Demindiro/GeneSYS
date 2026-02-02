@@ -82,8 +82,10 @@ DEBUG.COMMAND_MAX = ($ - debug.commands) / 8
 debug.cmd_echo:
 	mov rdi, debug.tx.buffer
 	mov ebx, ecx
+	xor eax, eax
+	stosb
 	rep movsb
-	mov ecx, ebx
+	lea ecx, [ebx + 1]
 	jmp debug.tx.send
 
 ; debug.tx.buffer: data base

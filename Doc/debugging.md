@@ -7,9 +7,8 @@ A packet-based protocol is used.
 All packets are encoded using COBS.
 All packets are suffixed with the CRC32C of the contents *before* encoding.
 
-The interface follows a call/return model:
-responses are only sent upon request.
-This interface is not intended nor suitable for real-time communications.
+The command interface follows a call/return model:
+exactly one response is sent for each request.
 
 All integers are in little-endian format,
 i.e. low bytes are sent before high bytes.
@@ -48,6 +47,8 @@ Commands
 --------
 
 Commands are prefixed with a single byte indicating which command.
+
+Responses are prefixed with a zero byte.
 
 ### 0. Echo
 
