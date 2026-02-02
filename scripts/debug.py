@@ -81,12 +81,17 @@ def cmd_echo(sock, data):
     print('got: ', r)
     print('OK' if want == r else 'FAIL')
 
+def _test_echo(sock):
+    for x in ['', '123456789', 'a' * 253, 'x' * 254, 'y' * 255, 'z' * 256]:
+        cmd_echo(sock, x)
+
 def main(path, subcmd, *args):
     import socket
     s = connect(path)
     reset(s)
     {
         'echo': cmd_echo,
+        '_test_echo': _test_echo,
     }[subcmd](s, *args)
     # workaround QEMU apparently forgetting to set POLLIN
     # whenever POLLHUP is passed too.
