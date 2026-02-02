@@ -24,7 +24,7 @@ def encode_cobs(data):
         if len(nx) >= 254:
             f(0xff)
     if nx:
-        f(len(nx))
+        f(1 + len(nx))
     x.append(0)
     return bytes(x)
 
