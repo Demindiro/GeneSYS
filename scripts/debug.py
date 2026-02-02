@@ -101,6 +101,22 @@ def cmd_identify(sock):
     print('architecture:', hex(arch))
     print('extra:', extra)
 
+def cmd_syslog(sock):
+    timestamp = None
+    while True:
+        r = cmd(sock, 2, (timestamp or 0).to_bytes(8, 'little'))
+        n_timestamp = int.from_bytes(r[0:8], 'little')
+        if n_timestamp == ((1 << 64) - 1):
+            break
+        src = int.from_bytes(r[8:12], 'little')
+        msg = r[12:]
+        try:
+            msg = msg.decode('utf-8')
+        except:
+            pass
+        print(f'[{n_timestamp}|{src}] {msg!r}')
+        timestamp = n_timestamp + 1
+
 def _test_echo(sock):
     for x in ['', '123456789', 'a' * 253, 'x' * 254, 'y' * 255, 'z' * 256]:
         cmd_echo(sock, x)

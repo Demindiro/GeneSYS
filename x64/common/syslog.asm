@@ -1,3 +1,5 @@
+SYSLOG.BUFFER_SIZE = 1 shl 17
+
 ; rsi: message address
 ; rcx: message length
 ;
@@ -24,3 +26,40 @@ syslog.push:
 	rep movsb
 	mov [syslog.head], edx
 .e:	ret
+
+; get the first message at or after the given timestamp
+;
+; rax: timestamp
+;
+; rax: timestamp
+; rsi: message base if some, or zero if none
+; rcx: message length
+syslog.get_by_timestamp:
+	mov ecx, [syslog.head]
+	mov rsi, syslog.buffer
+	shl ecx, 6
+	mov ebx, ecx
+.scan:
+	mov rdx, [rsi + rcx]
+	cmp rdx, rax
+	jae .found
+	add ecx, 64
+	and ecx, SYSLOG.BUFFER_SIZE - 1
+	cmp ecx, ebx
+	jne .scan
+	xor esi, esi
+	ret
+.found:
+	mov rax, rdx
+	add rsi, rcx
+	lea rcx, [rsi + 63]
+	add rsi, 8
+	; look for last non-zero byte
+@@:	cmp byte [rcx], 0
+	jne .e
+	dec rcx
+	cmp rcx, rsi
+	jae @b
+.e:	sub ecx, esi
+	inc ecx
+	ret

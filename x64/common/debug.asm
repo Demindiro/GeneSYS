@@ -78,6 +78,7 @@ times ((-$) and 7) int3
 debug.commands:
 	dq debug.cmd_echo
 	dq debug.cmd_identify
+	dq debug.cmd_syslog
 DEBUG.COMMAND_MAX = ($ - debug.commands) / 8
 
 debug.cmd_echo:
@@ -100,6 +101,28 @@ debug.cmd_identify:
 	mov eax, "02"
 	stosw
 	mov ecx, 22
+	jmp debug.tx.send
+
+debug.cmd_syslog:
+	cmp rcx, 8
+	jb .e
+	lodsq
+	call syslog.get_by_timestamp
+	mov rdi, debug.tx.buffer
+	test esi, esi
+	jz .none
+	stosq
+	xor eax, eax
+	stosd
+	rep movsb
+	mov ecx, edi
+	sub ecx, debug.tx.buffer and 0xffffffff
+	jmp debug.tx.send
+.e:	ret
+.none:
+	mov rax, -1
+	stosq
+	mov ecx, 8
 	jmp debug.tx.send
 
 ; debug.tx.buffer: data base

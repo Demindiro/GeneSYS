@@ -70,13 +70,16 @@ Response:
 Request:
 - a `u64` timestamp which *should* represent nanoseconds since boot.
 
-Response:
-- a `u64` timestamp or `-1` if no further log entries.
-  if `-1`, no further data in the packet.
+Response: the first log entry that comes right at or after the given timestamp.
+
+- a `u64` timestamp, or `-1` if none.
+  In this case, no further data follows.
 - a `u32` describing the source of the log entry.
   The exact meaning depends on the platform.
 - an arbitrary byte string.
   It *should* be valid UTF-8.
+
+Note that timestamps are expected to be unique.
 
 ### 3. Send message
 

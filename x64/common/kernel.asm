@@ -254,7 +254,7 @@ syscall.scratch: dq ?
 syslog.head: dq ?
 rb ((-$) and 63)  ; pad to cache line
 
-syslog.buffer: rb (1 shl 17)
+syslog.buffer: rb SYSLOG.BUFFER_SIZE
 .end:
 
 allocator.sets: rw ALLOCATOR.SETS
