@@ -41,7 +41,7 @@ def decode_cobs(packet):
             if nn != 255:
                 r.append(0)
             nn = x
-            n = min(x, 254)
+            n = x - 1
         else:
             r.append(x)
             n -= 1
