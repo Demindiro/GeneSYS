@@ -110,7 +110,13 @@ def _test_cobs():
         z = decode_cobs(y)
         assert x == z, f'\n{x}\n\t<>\n{z}\n\t:\n{y}'
 
+def _test_crc():
+    for x in [b'', b'x', b'xyz', b'123456789']:
+        y = crc32c(x)
+        assert crc32c(x + y.to_bytes(4, 'little')) == 0x48674bc7
+
 if __name__ == '__main__':
     _test_cobs()
+    _test_crc()
     import sys, time
     main(*sys.argv[1:])
