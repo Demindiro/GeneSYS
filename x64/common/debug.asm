@@ -12,14 +12,14 @@ debug.handle_rx:
 	movzx ecx, word [debug.rx.len]
 .l:	mov edx, COM1.IOBASE
 	comx.read_byte .e
+	test al, al
+	jz .process_packet
 	cmp cx, [debug.rx.cap]
 	je .chunk_header
 	mov [debug.rx.buffer + rcx], al
 	inc ecx
 	jmp .l
 .chunk_header:
-	test al, al
-	jz .process_packet
 	mov dl, [debug.rx.prev]
 	mov [debug.rx.prev], al
 	cmp dl, 0xfe
