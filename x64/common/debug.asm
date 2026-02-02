@@ -39,6 +39,9 @@ debug.handle_rx:
 	; TODO validate crc32
 	mov rsi, debug.rx.buffer
 	lodsb
+	; don't call invalid commands
+	cmp al, DEBUG.COMMAND_MAX - 1
+	ja .f
 	call qword [debug.commands + rax*8]
 .f:	xor ecx, ecx
 	mov byte [debug.rx.prev], 0xff
@@ -67,6 +70,7 @@ debug.handle_tx:
 times ((-$) and 7) int3
 debug.commands:
 	dq debug.cmd_echo
+DEBUG.COMMAND_MAX = ($ - debug.commands) / 8
 
 debug.cmd_echo:
 	mov rdi, debug.tx.buffer
