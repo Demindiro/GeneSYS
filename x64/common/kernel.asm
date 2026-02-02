@@ -1,7 +1,11 @@
 ; == kernel memory layout ==
 ; 0: 0xffffffffc0000000 - 0xffffffffc0200000 : code  (RX)
 ;      0xffffffffc01fffe0 - 0xffffffffc0200000 : boot info
-; 1: 0xffffffffc0200000 - 0xffffffffc0400000 : guard (unmapped)
+; 1: 0xffffffffc0200000 - 0xffffffffc0400000 : MMIO
+;      0xffffffffc0200000 - 0xffffffffc03fb000 : guard (unmapped)
+;      0xffffffffc03fb000 - 0xffffffffc03fc000 : LAPIC
+;      0xffffffffc03fd000 - 0xffffffffc03fe000 : guard (unmapped)
+;      0xffffffffc03ff000 - 0xffffffffc0400000 : IOAPIC
 ; 2: 0xffffffffc0400000 - 0xffffffffc0600000 : guard (unmapped)
 ; 3: 0xffffffffc0600000 - 0xffffffffc0800000 : temp page (unmapped/RW)
 ; 4: 0xffffffffc0800000 - 0xffffffffc0a00000 : guard (unmapped)
@@ -22,6 +26,7 @@
 ; A gap is added between code and data to help catch erroneous memory operations,
 ; but both PD entries are in the same cache line.
 
+include "../util/registers.asm"
 
 ;; structure passed by the bootloader
 BOOTINFO.sizeof = 48
@@ -31,7 +36,22 @@ allocator.bitmap = 0xffffffffc0a00000
 
 init_libos.base  = (1 shl 30) - (1 shl 21)
 
-temp.pde = dat.end - 0x1000 + 8*3 ; TODO we provide guarantees about page table layout
+paging.pml4      = dat.end - 0x1000
+paging.pdp       = dat.end - 0x2000
+paging.pd        = dat.end - 0x3000
+paging.pt_bitmap = dat.end - 0x4000
+paging.pt_mmio   = dat.end - 0x5000
+paging.pml4.pdp     = paging.pml4 + 8*511
+paging.pdp.pd       = paging.pdp  + 8*511
+paging.pd.code      = paging.pd + 8*0
+paging.pd.pt_mmio   = paging.pd + 8*1
+paging.pd.temp      = paging.pd + 8*3
+paging.pd.pt_bitmap = paging.pd + 8*5
+paging.pd.data      = paging.pd + 8*7
+paging.pt_mmio.ioapic = paging.pt_mmio + 8*511
+paging.pt_mmio.lapic  = paging.pt_mmio + 8*509
+
+irp x,pml4,pdp,pd,pt_bitmap,pt_mmio { paging_phys.#x = (2 shl 21) + (paging.#x - dat.end) }
 
 MSR.IA32_EFER = 0xc0000080
 IA32_EFER.SCE = 1 shl  0
@@ -41,21 +61,16 @@ IA32_EFER.NXE = 1 shl 11
 use64
 
 org 0xffffffffc0000000
-virtual at ($$ + (1 shl 21) - BOOTINFO.sizeof)
+virtual at (exec.end - BOOTINFO.sizeof)
 	bootinfo:
 	; physical base address of the kernel code + data.
 	; it is exactly 4M, with first 2M for code and last 2M for data.
 	; it *must* be aligned on a 2M boundary.
 	.phys_base: dq ?
-	; the end (excl) virtual address of free data, starting from the head.
-	; data past this point has been allocated by the bootloader and should
-	; be used with care, as it includes page tables.
-	; i.e.:
+	; the physical address of the initial page table.
 	;
-	; |        code         |          gap          |         data        |
-	;                                               |   free   |   used   |
-	;                                                          ^~~~
-	.data_free: dq ?
+	; this table is immutable and can be used for "fast reboots".
+	.init_pagetable: dq ?
 	; the start (incl) address of the map with regular usable memory
 	;
 	; note that this *includes* the memory used by the kernel.
@@ -73,8 +88,21 @@ virtual at ($$ + (1 shl 21) - BOOTINFO.sizeof)
 	.libos.end:   dq ?
 end virtual
 exec:
+	; clear data region
+	mov ecx, (dat.end - dat) / 8
+	mov rdi, dat
+	xor eax, eax
+	rep stosq
 
-.init:
+	; copy GDT to data region
+	; the CPU insists on setting 0x89 to 0x8b in TSS segment
+	; and we can't load it with 0x8b already set,
+	; so it must be put in a R/W region.
+	mov rsi, init_gdt
+	mov rdi, gdt
+	mov ecx, (gdt.end - gdt) / 8
+	rep movsq
+
 	lgdt [gdtr]
 	mov ax, GDT.KERNEL_SS
 	mov ss, ax
@@ -88,42 +116,65 @@ exec:
 	push rax
 	retfq
 @@:	lidt [idtr]
+	; TSS
+	mov word [tss.iopb], tss.end - tss
+	mov qword [tss.rsp0], _stack.end
+	mov qword [tss.ist1], _stack.end
+	mov ax, GDT.TSS
+	ltr ax
 
+	; load initial page table and ensure all global mappings are flushed.
+	mov rax, cr4
+	and rax, not CR4.PGE
+	mov cr4, rax
+	mov rax, [bootinfo.init_pagetable]
+	mov cr3, rax
+
+	; construct new page table
+	mov rbx, [bootinfo.phys_base]
+	; PD
+	lea rax, [rbx + (0 shl 21) + PAGE.A + PAGE.D + PAGE.PS + PAGE.G + PAGE.P]
+	mov [paging.pd.code], rax
+	lea rax, [rbx + (1 shl 21) + PAGE.A + PAGE.D + PAGE.PS + PAGE.RW + PAGE.G + PAGE.P]
+	mov [paging.pd.data], rax
+	lea rax, [rbx + paging_phys.pt_bitmap + PAGE.A + PAGE.D + PAGE.RW + PAGE.P]
+	mov [paging.pd.pt_bitmap], rax
+	lea rax, [rbx + paging_phys.pt_mmio   + PAGE.A + PAGE.D + PAGE.RW + PAGE.P]
+	mov [paging.pd.pt_mmio  ], rax
+	; PDP
+	lea rax, [rbx + paging_phys.pd  + PAGE.A + PAGE.D + PAGE.RW + PAGE.P]
+	mov [paging.pdp.pd], rax
+	; PML4
+	lea rax, [rbx + paging_phys.pdp + PAGE.A + PAGE.D + PAGE.RW + PAGE.P]
+	mov [paging.pml4.pdp], rax
+	; load new page table with global enabled
+	mov rax, cr4
+	or  rax, CR4.PGE
+	mov cr4, rax
+	add rbx, paging_phys.pml4
+	mov cr3, rbx
+
+	; enable syscall instruction
 	mov ecx, MSR.IA32_EFER
 	mov eax, IA32_EFER.SCE or IA32_EFER.LME
 	xor edx, edx
 	wrmsr
 
-.clear_identity_map:
-	; the kernel is designed to survive a (nearly) FUBAR system state.
-	; the identity map is arbitrarily large and might not be reliable,
-	; so zero it out at start and pretend we have never been given one.
-	mov rdi, cr3
-	; in case PCID or some other funny bits are set
-	and rdi, -0x1000
-	push rdi
-	; use virtual address
-	sub rdi, [bootinfo.phys_base]
-	add rdi, dat - (1 shl 21)
-	mov ecx, 256
-	xor eax, eax
-	rep stosq
-	; ... and immediately reset those bits + flush TLB
-	pop rdi
-	mov cr3, rdi
-
-	mov rax, [bootinfo.data_free]
-	mov [data_free], rax
 	call allocator.init
 	call syscall.init
 	mov qword [syslog.head], 0
+	mov edx, COM1.IOBASE
+	call comx.init
+	call debug.init
+	call ioapic.init
+	call lapic.init
 
 .load_libos:
 	; allocate and initialize page table
 	call allocator.alloc_2m
 	mov r15, rax
 	or rax, PAGE.PS or PAGE.RW or PAGE.P
-	mov [temp.pde], rax
+	mov [paging.pd.temp], rax
 	; zero out entire page
 	mov ecx, (1 shl 21) / 8
 	mov rdi, temp.base
@@ -152,7 +203,7 @@ exec:
 	or rax, PAGE.PS or PAGE.US or PAGE.RW or PAGE.P
 	mov [temp.base + 0x3000 - 1*8], rax
 	; done setting up page tables
-	mov qword [temp.pde], 0
+	mov qword [paging.pd.temp], 0
 	invlpg [temp.base]
 	mov cr3, r15
 	; copy OS code
@@ -175,36 +226,23 @@ exec:
 	irp x,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 { xorps xmm#x, xmm#x }
 	sysretq
 
-.com1:
-	mov edx, COM1.IOBASE
-	call comx.init
-@@:	mov rsi, rsp
-	mov ecx, 1
-	call comx.read
-	mov rdi, rsp
-	mov ebx, ecx
-	mov ecx, 1
-	sub ecx, ebx
-	call comx.write
-	jmp @b
-
-@@:	hlt
-	jmp @b
-
-include "../common/idt.asm"
 include "../common/gdt.asm"
-include "../common/comx.asm"
 include "../common/crc32c.asm"
 include "allocator.asm"
 include "syscall.asm"
 include "syslog.asm"
+include "ioapic.asm"
+include "lapic.asm"
+include "comx.asm"
+include "debug.asm"
+include "idt.asm"
 
 idtr: dw idt.end - idt - 1
       dq idt
 gdtr: dw gdt.end - gdt - 1
       dq gdt
 
-exec.end:
+exec.end = exec + (1 shl 21)
 
 
 org 0xffffffffc0e00000
@@ -212,17 +250,39 @@ dat:
 ; "stack is reserved" :^)))))
 _stack: rb 1024
 .end:
-; free head, initialized to bootinfo.data_free
-data_free: dq ?
 syscall.scratch: dq ?
 syslog.head: dq ?
 rb ((-$) and 63)  ; pad to cache line
 
-syslog.buffer: rb (1 shl 17)
+syslog.buffer: rb SYSLOG.BUFFER_SIZE
 .end:
 
 allocator.sets: rw ALLOCATOR.SETS
 .super:         rw ALLOCATOR.SUPERSETS
 .end:
+
+rb ((-$) and 7)
+
+gdt: rb init_gdt.end - init_gdt
+.end:
+
+	dd ?
+tss:
+	dd ?
+	irp x,0,1,2 { .rsp#x: dq ? }
+	dd ?, ?
+	irp x,1,2,3,4,5,6,7 { .ist#x: dq ? }
+	dd ?, ?
+	dw ?
+.iopb: dw ?
+.end:
+
+debug.tx.buffer.extra: rb 8  ; extra bytes for COBS stuffing
+debug.tx.buffer: rb DEBUG.TX.BUFFER_SIZE
+debug.rx.buffer: rb DEBUG.RX.BUFFER_SIZE
+debug.tx.cur: dw ?  ; signed!!
+debug.rx.len: dw ?
+debug.rx.cap: dw ?
+debug.rx.prev: db ?
 
 dat.end = dat + (1 shl 21)

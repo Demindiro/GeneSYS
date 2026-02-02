@@ -14,46 +14,13 @@ ALLOCATOR.SETS      = ALLOCATOR.SETS_PER_SUPERSET * ALLOCATOR.SUPERSETS
 ALLOCATOR.PAGES     = ALLOCATOR.PAGES_PER_SET     * ALLOCATOR.SETS
 
 allocator.init:
-	; allocate 4K page
-	mov rdx, [data_free]
-	and rdx, not 0xfff
-	sub rdx, 0x1000
-	mov [data_free], rdx
 	; populate bitmap in first half
-	mov rdi, rdx
+	mov rdi, paging.pt_bitmap
 	mov ecx, 256
 	mov eax, (1 shl 20) or PAGE.G or PAGE.A or PAGE.D or PAGE.RW or PAGE.P
 @@:	stosq
 	add eax, 0x1000
 	loop @b
-	; clear second half
-	mov ecx, 256
-	xor eax, eax
-	rep stosq
-	; virt -> phys
-	add rdx, (1 shl 21) - dat
-	add rdx, [bootinfo.phys_base]
-	; insert 4K page
-	; TODO avoid this pointer-chasing nonsense
-	or rdx, PAGE.G or PAGE.A or PAGE.D or PAGE.RW or PAGE.P
-
-	mov rax, cr3         ; PML4
-	sub rax, [bootinfo.phys_base]
-	and rax, not 0xfff
-	add rax, dat - (1 shl 21)
-
-	mov rax, [rax + 511*8] ; PDP
-	sub rax, [bootinfo.phys_base]
-	and rax, not 0xfff
-	add rax, dat - (1 shl 21)
-
-	mov rax, [rax + 511*8] ; PD
-	sub rax, [bootinfo.phys_base]
-	and rax, not 0xfff
-	add rax, dat - (1 shl 21)
-
-	mov [rax + 5*8], rdx
-
 	; zero out bitmap
 	mov ecx, (1 shl 20) / 8
 	mov rdi, allocator.bitmap

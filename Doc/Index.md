@@ -11,3 +11,4 @@ Chapters
 2. [Compute model](model.md)
 3. [Supported architectures](arch.md)
    1. [x86-64 / x64 / AMD64 / IA32e](arch/x64.md)
+4. [Debugging](debugging.md)

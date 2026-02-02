@@ -17,6 +17,11 @@ COMx.scratch     = 7
 COMx.STAT_LINE.DR   = 1 shl 0
 COMx.STAT_LINE.THRE = 1 shl 5
 
+COMx.INTR.RX_AVAIL     = 1 shl 0
+COMx.INTR.TX_EMPTY     = 1 shl 1
+COMx.INTR.RX_STATUS    = 1 shl 2
+COMx.INTR.MODEM_STATUS = 1 shl 3
+
 ; rdx: I/O base
 ;
 ; rdx: I/O base
@@ -33,8 +38,8 @@ macro f reg, val {
 	f COMx.ctrl_line, 1 shl 7
 	f COMx.baud_lo, 1 ; 115200
 	f COMx.baud_hi, 0
-	f COMx.ctrl_line, (1 shl 3) or (1 shl 2) or (3 shl 0) ; 8E2
-	f COMx.intr_enable, 0 ; don't bother with interrupts for now
+	f COMx.ctrl_line, 0x03 ; 1 byte, 8N1
+	f COMx.intr_enable, COMx.INTR.RX_AVAIL
 	f COMx.ctrl_fifo, 7 ; clear buffers and enable
 	f COMx.ctrl_modem, 01011b ; DTR, DTS, OUT2 (IRQ)
 	add edx, -x
@@ -103,10 +108,61 @@ comx.read:
 
 ; rdx: I/O base
 ;
+; rax: byte
+; rdx: I/O base
+macro comx.read_byte target_ifnone {
+	call comx._stat_line
+	test al, COMx.STAT_LINE.DR
+	jz target_ifnone
+	xor eax, eax
+	in al, dx
+}
+
+; rdx: I/O base
+macro comx.jmp_if_write_full target {
+	call comx._stat_line
+	test al, COMx.STAT_LINE.THRE
+	jz target
+}
+
+; rdx: I/O base
+;  al: byte
+;
+; rdx: I/O base
+macro comx.write_byte {
+	out dx, al
+}
+
+; rdx: I/O base
+;
 ; rdx: I/O base
 ; al: status
 comx._stat_line:
 	add edx, COMx.stat_line
 	in al, dx
 	sub edx, COMx.stat_line
+	ret
+
+; rdx: I/O base
+;
+; rdx: I/O base
+; rax: clobber
+comx.enable_tx_intr:
+	add edx, COMx.intr_enable
+	in  al, dx
+	or  al, COMx.INTR.TX_EMPTY
+	out dx, al
+	sub edx, COMx.intr_enable
+	ret
+
+; rdx: I/O base
+;
+; rdx: I/O base
+; rax: clobber
+comx.disable_tx_intr:
+	add edx, COMx.intr_enable
+	in  al, dx
+	and al, not COMx.INTR.TX_EMPTY
+	out dx, al
+	sub edx, COMx.intr_enable
 	ret
