@@ -105,15 +105,17 @@ def _test_echo(sock):
     for x in ['', '123456789', 'a' * 253, 'x' * 254, 'y' * 255, 'z' * 256]:
         cmd_echo(sock, x)
 
+COMMANDS = { x[4:]: f for x, f in globals().items() if x.startswith('cmd_') }
+COMMANDS['_test_echo'] = _test_echo
+
 def main(path, subcmd, *args):
+    if subcmd in ('-h', '--help', 'help'):
+        print('commands:', *COMMANDS)
+        return
     import socket
     s = connect(path)
     reset(s)
-    {
-        'echo': cmd_echo,
-        'identify': cmd_identify,
-        '_test_echo': _test_echo,
-    }[subcmd](s, *args)
+    COMMANDS[subcmd](s, *args)
     # workaround QEMU apparently forgetting to set POLLIN
     # whenever POLLHUP is passed too.
     time.sleep(0.1)
