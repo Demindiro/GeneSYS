@@ -54,6 +54,25 @@ def decode(data):
     data = decode_cobs(data)
     return data[:-4]
 
+def send(sock, data):
+    return sock.sendall(encode(data))
+
+def recv_raw(sock) -> bytes:
+    r = b''
+    while True:
+        x = sock.recv(1)
+        r += x
+        if x in (b'\0', b''):
+            break
+    return r
+
+def recv(sock) -> bytes:
+    return decode(recv_raw(sock))
+
+def cmd(sock, cmd_id, data) -> bytes:
+    send(sock, bytes([cmd_id]) + data)
+    return recv(sock)
+
 def connect(path):
     import socket
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -66,20 +85,21 @@ def reset(sock):
 
 def cmd_echo(sock, data):
     data = data.encode('utf-8')
-    sock.sendall(encode(b'\0' + data))
-    r = b''
-    print('waiting', end='', flush=True)
-    while True:
-        x = sock.recv(1)
-        print('.', end='', flush=True)
-        r += x
-        if x in (b'\0', b''):
-            break
-    print()
+    send(sock, b'\0' + data)
     want = encode(b'\0' + data)
+    r = recv_raw(sock)
     print('want:', want)
     print('got: ', r)
     print('OK' if want == r else 'FAIL')
+
+def cmd_identify(sock):
+    r = cmd(sock, 1, b'')
+    version = int.from_bytes(r[0:2], 'little')
+    arch    = int.from_bytes(r[2:4], 'little')
+    extra   = r[4:]
+    print('version:', hex(version))
+    print('architecture:', hex(arch))
+    print('extra:', extra)
 
 def _test_echo(sock):
     for x in ['', '123456789', 'a' * 253, 'x' * 254, 'y' * 255, 'z' * 256]:
@@ -91,6 +111,7 @@ def main(path, subcmd, *args):
     reset(s)
     {
         'echo': cmd_echo,
+        'identify': cmd_identify,
         '_test_echo': _test_echo,
     }[subcmd](s, *args)
     # workaround QEMU apparently forgetting to set POLLIN

@@ -77,6 +77,7 @@ debug.handle_tx:
 times ((-$) and 7) int3
 debug.commands:
 	dq debug.cmd_echo
+	dq debug.cmd_identify
 DEBUG.COMMAND_MAX = ($ - debug.commands) / 8
 
 debug.cmd_echo:
@@ -86,6 +87,19 @@ debug.cmd_echo:
 	stosb
 	rep movsb
 	lea ecx, [ebx + 1]
+	jmp debug.tx.send
+
+debug.cmd_identify:
+	mov rdi, debug.tx.buffer
+	mov eax, 0x86640000
+	stosd
+	mov rax, "GeneSYS "
+	stosq
+	mov rax, "2026/02/"
+	stosq
+	mov eax, "02"
+	stosw
+	mov ecx, 22
 	jmp debug.tx.send
 
 ; debug.tx.buffer: data base
