@@ -20,16 +20,16 @@ debug.handle_rx:
 	inc ecx
 	jmp .l
 .chunk_header:
-	mov dl, [debug.rx.prev]
+	movzx edx, byte [debug.rx.prev]
 	mov [debug.rx.prev], al
-	cmp dl, 0xfe
-	seta dl
-	sub al, dl
-	add [debug.rx.cap], ax
-	test dl, dl
-	jnz .l
+	cmp dl, 0xff
+	je @f
 	mov byte [debug.rx.buffer + rcx], 0
 	inc ecx
+	add [debug.rx.cap], ax
+	jmp .l
+@@:	dec eax
+	add [debug.rx.cap], ax
 	jmp .l
 .process_packet:
 	; if the packet is less than 5 bytes (command ID + CRC32C),
@@ -95,27 +95,36 @@ debug.tx.send:
 	mov rdi, debug.tx.buffer.extra
 	mov rsi, debug.tx.buffer
 .l:	mov rdx, rsi
-@@:	cmp rdx, rbx
-	jz .e
-	movzx eax, byte [rdx]
+@@:	movzx eax, byte [rdx]
 	inc rdx
-	test al, al
-	jnz @b
+	test eax, eax
+	jz .partial
 	mov eax, edx
 	sub eax, esi
+	cmp eax, 0xfe
+	jae .full
+	cmp rdx, rbx
+	jne @b
+.full:
+	mov ecx, edx
+	sub ecx, esi
+	lea eax, [ecx + 1]
 	stosb
-	mov ecx, eax
+	rep movsb
+	cmp rsi, rbx
+	jne .l
+	jmp .end
+.partial:
+	mov ecx, edx
+	sub ecx, esi
+	mov [rdi], cl
 	dec ecx
+	inc rdi
 	rep movsb
 	inc rsi
 	cmp rsi, rbx
-	jnz .l
-.e:	mov eax, edx
-	sub eax, esi
-	mov ecx, eax
-	inc eax
-	stosb
-	rep movsb
+	jne .l
+.end:
 	xor eax, eax
 	stosb
 	mov word [debug.tx.cur], -8
