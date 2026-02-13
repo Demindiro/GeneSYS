@@ -3,6 +3,19 @@ MSR.LSTAR  = 0xc0000082
 MSR.CSTAR  = 0xc0000083
 MSR.SFMASK = 0xc0000084
 
+SYSCALL.SYSCONF:
+.EXC_DIVISION    =  0
+.EXC_OVERFLOW    =  8
+.EXC_INVALID_OP  = 16
+.EXC_PAGE_FAULT  = 24
+.EXC_FPU         = 32
+.EXC_MACHINE     = 40
+.IRQ             = 56
+.FLAGS           = 64
+.REG_RIP         = 72
+.REG_RFLAGS      = 80
+.REG_RAX         = 88
+
 syscall.init:
 	mov ecx, MSR.STAR
 	xor eax, eax
@@ -48,6 +61,7 @@ syscall.table:
 	f 1, log
 	f 2, halt
 	f 3, identify
+	f 4, set_configuration_space
 SYSCALL.MAX_SYSID = x
 purge f, x
 
@@ -67,3 +81,15 @@ syscall.identify:
 	mov rax, "GeneSYS"
 	mov rdx, 0x20260130
 	ret
+
+syscall.set_configuration_space:
+	; ensure the OS doesn't attempt to corrupt kernel space
+	; simply forbidding negative half is sufficient
+	test rsi, rsi
+	js syscall.__panic  ; TODO
+	mov [libos.sysconf_base], rsi
+	ret
+
+syscall.__panic:
+@@:	hlt
+	jmp @b

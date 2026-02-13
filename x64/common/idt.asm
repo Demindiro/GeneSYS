@@ -83,7 +83,17 @@ idt.ex_of:
 idt.ex_br:
 	hlt
 idt.ex_ud:
-	hlt
+	push rdi
+	mov rdi, [libos.sysconf_base]
+	mov [rdi + SYSCALL.SYSCONF.REG_RAX], rax
+	mov rax, [rsp]
+	mov [rdi + SYSCALL.SYSCONF.REG_RIP], rax
+	mov rax, [rsp + 16]
+	mov [rdi + SYSCALL.SYSCONF.REG_RFLAGS], rax
+	mov rax, [rdi + SYSCALL.SYSCONF.EXC_INVALID_OP]
+	pop rdi
+	mov [rsp], rax
+	iretq
 idt.ex_nm:
 	hlt
 idt.ex_df:

@@ -254,6 +254,7 @@ _stack: rb 1024
 .end:
 syscall.scratch: dq ?
 syslog.head: dq ?
+libos.sysconf_base: dq ?
 debug.tx.head: dd ?
 debug.tx.tail: dd ?
 rb ((-$) and 63)  ; pad to cache line
