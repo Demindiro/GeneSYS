@@ -83,6 +83,8 @@ idt.ex_of:
 idt.ex_br:
 	hlt
 idt.ex_ud:
+	cmp word [rsp + 8], 0
+	je .kernel_ud
 	push rdi
 	mov rdi, [libos.sysconf_base]
 	mov [rdi + SYSCALL.SYSCONF.REG_RAX], rax
@@ -94,6 +96,10 @@ idt.ex_ud:
 	pop rdi
 	mov [rsp], rax
 	iretq
+.kernel_ud:
+@@:	hlt
+	jmp @b
+
 idt.ex_nm:
 	hlt
 idt.ex_df:
