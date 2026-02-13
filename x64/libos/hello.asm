@@ -4,26 +4,43 @@ SYS.LOG      = 1
 SYS.HALT     = 2
 SYS.IDENTIFY = 3
 
+macro trace msg {
 	mov eax, SYS.LOG
-	lea rsi, [s]
-	mov edx, s.end - s
+	lea rsi, [msg]
+	mov edx, msg#.end - msg
 	syscall
+}
 
+start:
+	trace msg_hello
+
+.identify_kernel:
 	mov eax, SYS.IDENTIFY
 	syscall
+	mov r8, "GeneSYS"
+	cmp rax, r8
+	jne err_bad_kernel_identification
+	cmp rdx, 0x20260130
+	jne err_bad_kernel_identification
 
-	lea rsi, [scratch]
-	mov [rsi], rax
-	mov edx, 9
-	mov eax, SYS.LOG
+	trace msg_identified
+
+	jmp halt
+
+err_bad_kernel_identification:
+	trace err_bad_kernel_identification.msg
+halt:
+	mov eax, SYS.HALT
 	syscall
+	jmp halt
 
-@@:	mov eax, SYS.HALT
-	syscall
-	jmp @b
+syslog:
+	ret
 
-s: db "Hello world!", 10
+msg_hello: db "Hello world!", 10
+.end:
+msg_identified: db "GeneSYS identified", 10
 .end:
 
-scratch: dq 0
-db 10
+err_bad_kernel_identification.msg: db "error: kernel identification failed", 10
+.end:
