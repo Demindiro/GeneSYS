@@ -164,10 +164,12 @@ exec:
 	call syscall.init
 	mov qword [syslog.head], 0
 	mov edx, COM1.IOBASE
-	call comx.init
-	call debug.init
+	; initialize ioapic and lapic as the very first thing
+	; so we don't confuse COMx interrupts
 	call ioapic.init
 	call lapic.init
+	call comx.init
+	call debug.init
 
 .load_libos:
 	; allocate and initialize page table
