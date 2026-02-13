@@ -115,3 +115,16 @@ Request:
 ### 13. Store u64
 ### 14. Load u128
 ### 15. Store u128
+
+
+Events
+------
+
+Events can be sent at any time.
+
+Events are prefixed with a one byte,
+then an single byte identifier.
+
+#### 0. Syslog
+
+Contains an arbitrary string, which *should* be UTF-8.
