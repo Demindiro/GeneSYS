@@ -10,7 +10,7 @@ SYSCALL.SYSCONF:
 .EXC_PAGE_FAULT  = 24
 .EXC_FPU         = 32
 .EXC_MACHINE     = 40
-.IRQ             = 56
+.INTERRUPT       = 56
 .FLAGS           = 64
 .REG_RIP         = 72
 .REG_RFLAGS      = 80
@@ -34,17 +34,17 @@ syscall.init:
 	ret
 
 syscall.entry64:
-	mov [syscall.scratch], rsp
-	mov rsp, _stack.end
-	irp x,rcx,rbx,rsi,rdi { push x }
+	; make RSP/RCX/R11 match position of RSP/RIP/RFLAGS of interrupt/exception
+	mov [_stack.end - 8], rsp
+	mov rsp, _stack.end - 8
+	irp x,r11,rbx,rcx,rdi,rsi { push x }
 
 	dec eax
 	cmp eax, SYSCALL.MAX_SYSID
 	ja .bad_id
 	call qword [syscall.table + rax*8]
 
-	irp x,rdi,rsi,rbx,rcx { pop x }
-	mov rsp, [syscall.scratch]
+	irp x,rsi,rdi,rcx,rbx,r11,rsp { pop x }
 	sysretq
 
 .bad_id:

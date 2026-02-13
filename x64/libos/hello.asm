@@ -47,6 +47,10 @@ exception_invalid_op:
 	jmp halt
 
 
+interrupt:
+	trace msg_interrupt
+	jmp halt
+
 
 err_bad_kernel_identification:
 	trace err_bad_kernel_identification.msg
@@ -58,6 +62,8 @@ halt:
 msg_hello: db "Hello world!", 10
 .end:
 msg_identified: db "GeneSYS identified", 10
+.end:
+msg_interrupt: db "Received interrupt", 10
 .end:
 
 err_div:   db "error: divide by zero"
@@ -77,7 +83,7 @@ sysconf:
 .exc_fpu:        dq 0
 .exc_machine:    dq 0
 dq 0  ; reserved
-.irq: dq 0
+.interrupt:      dq interrupt
 .flags: dq 0
 .reg_rip:    dq 0
 .reg_rflags: dq 0

@@ -80,6 +80,7 @@ debug.commands:
 	dq debug.cmd_echo
 	dq debug.cmd_identify
 	dq debug.cmd_syslog
+	dq debug.cmd_message
 DEBUG.COMMAND_MAX = ($ - debug.commands) / 8
 
 debug.cmd_echo:
@@ -136,6 +137,12 @@ debug.cmd_syslog:
 	mov ecx, 1
 	call debug.tx.send
 	pop rax
+	ret
+
+debug.cmd_message:
+	mov rax, [libos.sysconf_base]
+	mov rax, [rax + SYSCALL.SYSCONF.INTERRUPT]
+	mov [isr.rip], rax
 	ret
 
 ; rsi: message base

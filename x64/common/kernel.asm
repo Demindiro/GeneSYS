@@ -252,7 +252,6 @@ dat:
 ; "stack is reserved" :^)))))
 _stack: rb 1024
 .end:
-syscall.scratch: dq ?
 syslog.head: dq ?
 libos.sysconf_base: dq ?
 debug.tx.head: dd ?

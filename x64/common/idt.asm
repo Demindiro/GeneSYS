@@ -8,6 +8,13 @@ IDT.DPL.0     =  0 shl 13
 IDT.DPL.3     =  3 shl 13
 IDT.P         =  1 shl 15
 
+virtual at (_stack.end - 32)
+	isr.rip:    dq ?
+	isr.cs:     dq ?
+	isr.rflags: dq ?
+	isr.rsp:    dq ?
+end virtual
+
 x = 0
 macro g nr, ist, target {
 	assert nr = x
