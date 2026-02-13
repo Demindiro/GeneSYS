@@ -12,6 +12,8 @@ syslog.push:
 	mov eax, ecx
 	; ignore empty messages
 	jrcxz .e
+	push rsi
+	push rcx
 	rdtsc
 	shr rdx, 32
 	or rax, rdx
@@ -25,6 +27,11 @@ syslog.push:
 	stosq
 	rep movsb
 	mov [syslog.head], edx
+	pop rcx
+	pop rsi
+	push rax
+	call debug.event_syslog
+	pop rax
 .e:	ret
 
 ; get the first message at or after the given timestamp

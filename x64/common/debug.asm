@@ -125,6 +125,16 @@ debug.cmd_syslog:
 	mov ecx, 8
 	jmp debug.tx.send
 
+; rsi: message base
+; rcx: message length
+debug.event_syslog:
+	mov rdi, debug.tx.buffer
+	mov eax, 1
+	stosw
+	rep movsb
+	lea rcx, [rdi - debug.tx.buffer]
+	jmp debug.tx.send
+
 ; debug.tx.buffer: data base
 ; rcx: length
 debug.tx.send:
