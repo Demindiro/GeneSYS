@@ -70,10 +70,10 @@ Response:
 Request:
 - a `u64` timestamp which *should* represent nanoseconds since boot.
 
-Response: the first log entry that comes right at or after the given timestamp.
+Response: the first log entry that comes right at or after the given timestamp,
+or an empty packet if none.
 
-- a `u64` timestamp, or `-1` if none.
-  In this case, no further data follows.
+- a `u64` timestamp.
 - a `u32` describing the source of the log entry.
   The exact meaning depends on the platform.
 - an arbitrary byte string.
