@@ -254,6 +254,8 @@ _stack: rb 1024
 .end:
 syscall.scratch: dq ?
 syslog.head: dq ?
+debug.tx.head: dd ?
+debug.tx.tail: dd ?
 rb ((-$) and 63)  ; pad to cache line
 
 syslog.buffer: rb SYSLOG.BUFFER_SIZE
@@ -279,10 +281,8 @@ tss:
 .iopb: dw ?
 .end:
 
-debug.tx.buffer.extra: rb 8  ; extra bytes for COBS stuffing
 debug.tx.buffer: rb DEBUG.TX.BUFFER_SIZE
 debug.rx.buffer: rb DEBUG.RX.BUFFER_SIZE
-debug.tx.cur: dw ?  ; signed!!
 debug.rx.len: dw ?
 debug.rx.cap: dw ?
 debug.rx.prev: db ?
