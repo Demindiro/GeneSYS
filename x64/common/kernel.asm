@@ -232,6 +232,16 @@ exec:
 	irp x,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 { xorps xmm#x, xmm#x }
 	sysretq
 
+; enable interrupts and halt forever.
+; interrupts need to be enabled so the debug interface works.
+;
+; inputs: rsi=msg base  rcx=msg len
+panic:
+	call syslog.push
+@@:	sti
+	hlt
+	jmp @b
+
 include "../common/gdt.asm"
 include "../common/crc32c.asm"
 include "allocator.asm"

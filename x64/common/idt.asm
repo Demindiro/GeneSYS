@@ -104,8 +104,8 @@ idt.ex_of:
 idt.ex_br:
 	hlt
 idt.ex_ud:
-	cmp word [rsp + 8], 0
-	je .kernel_ud
+	cmp byte [rsp + 8], GDT.USER_CS
+	jne .kernel_ud
 	push rbx
 	push rsi
 	mov rbx, [libos.sysconf_base]
@@ -124,8 +124,9 @@ idt.ex_ud:
 	mov [rsp], rax
 	iretq
 .kernel_ud:
-@@:	hlt
-	jmp @b
+	mov rsi, idt.msg_kernel_ud
+	mov ecx, idt.msg_kernel_ud.len
+	jmp panic
 
 idt.ex_nm:
 	hlt
@@ -170,3 +171,6 @@ idt.intr_com1:
 	lapic.eoi
 	isr_popall
 	iretq
+
+idt.msg_kernel_ud: db "PANIC: #UD in kernel mode", 10
+.len = $ - idt.msg_kernel_ud
