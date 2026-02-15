@@ -140,11 +140,17 @@ debug.cmd_syslog:
 	ret
 
 debug.cmd_message:
+	; avoid recursive debug message interrupts,
+	; which easily could lead to a stack overflow
+	mov eax, [libos.flags]
+	bts eax, LIBOS.FLAGS.INTR_DEBUG_PENDING
+	jc .e
+	mov [libos.flags], eax
 	call sysconf.push_frame
 	mov rax, [rsi + SYSCALL.SYSCONF.INTERRUPT]
 	mov qword [isr.rip], rax
-	mov qword [isr.rax], 1
-	ret
+	mov qword [isr.rax], LIBOS.INTR.DEBUG
+.e:	ret
 
 ; rsi: message base
 ; rcx: message length

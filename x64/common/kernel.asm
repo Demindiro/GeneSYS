@@ -58,6 +58,10 @@ IA32_EFER.SCE = 1 shl  0
 IA32_EFER.LME = 1 shl  8
 IA32_EFER.NXE = 1 shl 11
 
+LIBOS.FLAGS.INTR_DEBUG_PENDING = 0
+LIBOS.INTR.TIMER =  1
+LIBOS.INTR.DEBUG = 31
+
 use64
 
 org 0xffffffffc0000000
@@ -254,6 +258,7 @@ _stack: rb 1024
 .end:
 syslog.head: dq ?
 libos.sysconf_base: dq ?
+libos.flags:        dq ?
 debug.tx.head: dd ?
 debug.tx.tail: dd ?
 rb ((-$) and 63)  ; pad to cache line

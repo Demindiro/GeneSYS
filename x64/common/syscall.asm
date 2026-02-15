@@ -72,6 +72,7 @@ syscall.table:
 	f 2, halt
 	f 3, identify
 	f 4, set_configuration_space
+	f 5, eoi
 SYSCALL.MAX_SYSID = x
 purge f, x
 
@@ -108,6 +109,15 @@ syscall.set_configuration_space:
 	test rsi, rsi
 	js syscall.__panic  ; TODO
 	mov [libos.sysconf_base], rsi
+	ret
+
+syscall.eoi:
+	cmp edx, LIBOS.INTR.DEBUG
+	je .enable_debug
+	ud2
+	ret
+.enable_debug:
+	and byte [libos.flags], not (1 shl LIBOS.FLAGS.INTR_DEBUG_PENDING)
 	ret
 
 syscall.__panic:

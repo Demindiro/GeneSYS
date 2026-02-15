@@ -6,6 +6,10 @@ SYS.LOG      = 1
 SYS.HALT     = 2
 SYS.IDENTIFY = 3
 SYS.SET_CONFIG_SPACE = 4
+SYS.EOI      = 5
+
+INTR.TIMER = 1
+INTR.DEBUG = 31
 
 macro trace msg {
 	mov eax, SYS.LOG
@@ -47,15 +51,23 @@ exception_invalid_op:
 	jmp exception_end
 
 interrupt:
-	cmp eax, 1
+	mov r15, rax
+	cmp eax, INTR.DEBUG
 	je interrupt_debug_message
 	trace msg_interrupt
-	jmp exception_end
+	jmp interrupt_end
 
 interrupt_debug_message:
 	trace msg_interrupt_debug_message
-	jmp exception_end
+	jmp interrupt_end
 
+
+interrupt_end:
+	add qword [sysconf.stack], 32
+	mov rdx, r15
+	mov eax, SYS.EOI
+	syscall
+	jmp halt
 
 exception_end:
 	add qword [sysconf.stack], 32
