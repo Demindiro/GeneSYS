@@ -113,3 +113,20 @@ syscall.set_configuration_space:
 syscall.__panic:
 @@:	hlt
 	jmp @b
+
+; inputs: none
+; outputs: rsi=sysconf base
+sysconf.push_frame:
+	mov rsi, [libos.sysconf_base]
+	mov rdi, [rsi + SYSCALL.SYSCONF.STACK]
+	sub rdi, 32
+	mov rax, [isr.rip]
+	mov rcx, [isr.rax]
+	mov rdx, [isr.rdx]
+	mov rbx, [isr.rdi]
+	mov [rsi + SYSCALL.SYSCONF.STACK], rdi
+	mov [rdi + SYSCONF.stack_frame.rip], rax
+	mov [rdi + SYSCONF.stack_frame.rax], rcx
+	mov [rdi + SYSCONF.stack_frame.rdx], rdx
+	mov [rdi + SYSCONF.stack_frame.rdi], rbx
+	ret

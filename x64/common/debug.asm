@@ -140,8 +140,8 @@ debug.cmd_syslog:
 	ret
 
 debug.cmd_message:
-	mov rax, [libos.sysconf_base]
-	mov rax, [rax + SYSCALL.SYSCONF.INTERRUPT]
+	call sysconf.push_frame
+	mov rax, [rsi + SYSCALL.SYSCONF.INTERRUPT]
 	mov qword [isr.rip], rax
 	mov qword [isr.rax], 1
 	ret
