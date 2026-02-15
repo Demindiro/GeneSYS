@@ -10,11 +10,16 @@ SYSCALL.SYSCONF:
 .EXC_PAGE_FAULT  = 24
 .EXC_FPU         = 32
 .EXC_MACHINE     = 40
-.INTERRUPT       = 56
-.FLAGS           = 64
-.REG_RIP         = 72
-.REG_RFLAGS      = 80
-.REG_RAX         = 88
+.INTERRUPT       = 48
+.STACK           = 56
+
+virtual at 0
+	SYSCONF.stack_frame:
+		.rip:    dq ?
+		.rax:    dq ?
+		.rdx:    dq ?
+		.rdi:    dq ?
+end virtual
 
 syscall.init:
 	mov ecx, MSR.STAR
@@ -33,18 +38,23 @@ syscall.init:
 	wrmsr
 	ret
 
+; note that system calls are non-reentrant,
+; i.e. interrupts are never enabled.
+;
+; the sole exception to this rule is syscall.halt,
+; which does enable interrupts but never returns here,
+; instead using iretq to return to user space directly.
 syscall.entry64:
-	; make RSP/RCX/R11 match position of RSP/RIP/RFLAGS of interrupt/exception
 	mov [_stack.end - 8], rsp
 	mov rsp, _stack.end - 8
-	irp x,r11,rbx,rcx,rdi,rsi { push x }
+	irp x,rcx,rbx,rdi,rsi { push x }
 
 	dec eax
 	cmp eax, SYSCALL.MAX_SYSID
 	ja .bad_id
 	call qword [syscall.table + rax*8]
 
-	irp x,rsi,rdi,rcx,rbx,r11,rsp { pop x }
+	irp x,rsi,rdi,rbx,rcx,rsp { pop x }
 	sysretq
 
 .bad_id:
@@ -73,9 +83,16 @@ syscall.log:
 	ret
 
 syscall.halt:
+	; clear stack frame and reconstruct iretq arguments
+	mov rsp, isr
+	mov qword [isr.rip   ], rcx
+	mov qword [isr.rflags], r11
+	mov qword [isr.cs    ], GDT.USER_CS
+	; rsp is already set up properly
+	mov qword [isr.ss    ], GDT.USER_SS
 	sti
 	hlt
-	ret
+	iretq
 
 syscall.identify:
 	mov rax, "GeneSYS"

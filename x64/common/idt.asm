@@ -8,11 +8,13 @@ IDT.DPL.0     =  0 shl 13
 IDT.DPL.3     =  3 shl 13
 IDT.P         =  1 shl 15
 
-virtual at (_stack.end - 32)
+virtual at (_stack.end - 40)
+	isr:
 	isr.rip:    dq ?
 	isr.cs:     dq ?
 	isr.rflags: dq ?
 	isr.rsp:    dq ?
+	isr.ss:     dq ?
 end virtual
 
 x = 0
@@ -92,15 +94,21 @@ idt.ex_br:
 idt.ex_ud:
 	cmp word [rsp + 8], 0
 	je .kernel_ud
-	push rdi
-	mov rdi, [libos.sysconf_base]
-	mov [rdi + SYSCALL.SYSCONF.REG_RAX], rax
-	mov rax, [rsp]
-	mov [rdi + SYSCALL.SYSCONF.REG_RIP], rax
-	mov rax, [rsp + 16]
-	mov [rdi + SYSCALL.SYSCONF.REG_RFLAGS], rax
-	mov rax, [rdi + SYSCALL.SYSCONF.EXC_INVALID_OP]
-	pop rdi
+	push rbx
+	push rsi
+	mov rbx, [libos.sysconf_base]
+	mov rsi, [rbx + SYSCALL.SYSCONF.STACK]
+	sub rsi, 32
+	mov [rsi + SYSCONF.stack_frame.rdi   ], rdi
+	mov rdi, [isr.rip]
+	mov [rsi + SYSCONF.stack_frame.rdx   ], rdx
+	mov [rsi + SYSCONF.stack_frame.rax   ], rax
+	mov [rsi + SYSCONF.stack_frame.rip   ], rdi
+	mov rax, [rbx + SYSCALL.SYSCONF.EXC_INVALID_OP]
+	mov [rbx + SYSCALL.SYSCONF.STACK], rsi
+	mov rdi, rsi
+	pop rsi
+	pop rbx
 	mov [rsp], rax
 	iretq
 .kernel_ud:

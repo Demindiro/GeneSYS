@@ -40,20 +40,25 @@ start:
 
 exception_division:
 	trace err_div
-	jmp halt
+	jmp exception_end
 
 exception_invalid_op:
 	trace err_badop
-	jmp halt
-
+	jmp exception_end
 
 interrupt:
 	trace msg_interrupt
+	jmp exception_end
+
+
+exception_end:
+	add qword [sysconf.stack], 32
 	jmp halt
 
 
 err_bad_kernel_identification:
 	trace err_bad_kernel_identification.msg
+
 halt:
 	mov eax, SYS.HALT
 	syscall
@@ -82,10 +87,9 @@ sysconf:
 .exc_page_fault: dq 0
 .exc_fpu:        dq 0
 .exc_machine:    dq 0
-dq 0  ; reserved
 .interrupt:      dq interrupt
-.flags: dq 0
-.reg_rip:    dq 0
-.reg_rflags: dq 0
-.reg_rax:    dq 0
-dq 0, 0, 0, 0  ; reserved
+.stack:          dq exc_stack.end
+
+exc_stack:
+rb ((-$) and 4095)
+.end:
