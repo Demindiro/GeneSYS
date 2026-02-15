@@ -8,8 +8,20 @@ IDT.DPL.0     =  0 shl 13
 IDT.DPL.3     =  3 shl 13
 IDT.P         =  1 shl 15
 
-virtual at (_stack.end - 40)
-	isr:
+macro isr_pushall { irp x,rdi,rsi,rbx,rdx,rcx,rax \{ push x \} }
+macro isr_popall  { irp x,rax,rcx,rdx,rbx,rsi,rdi \{ pop  x \} }
+
+virtual at (_stack.end - ((5+6)*8))
+	; pushed by us
+	; note only applies to interrupts!
+	; exceptions may push other stuff before!
+	isr.rax: dq ?
+	isr.rcx: dq ?
+	isr.rdx: dq ?
+	isr.rbx: dq ?
+	isr.rsi: dq ?
+	isr.rdi: dq ?
+	; pushed by the CPU and used by iretq
 	isr.rip:    dq ?
 	isr.cs:     dq ?
 	isr.rflags: dq ?
@@ -153,8 +165,8 @@ idt.intr_unmapped:
 
 idt.intr_com1:
 	cld
-	irp x,rax,rcx,rdx,rbx,rsi,rdi { push x }
+	isr_pushall
 	call debug.handle
-	irp x,rdi,rsi,rbx,rdx,rcx,rax { pop  x }
 	lapic.eoi
+	isr_popall
 	iretq

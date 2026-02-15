@@ -231,13 +231,13 @@ exec:
 include "../common/gdt.asm"
 include "../common/crc32c.asm"
 include "allocator.asm"
-include "syscall.asm"
 include "syslog.asm"
 include "ioapic.asm"
 include "lapic.asm"
 include "comx.asm"
 include "debug.asm"
 include "idt.asm"
+include "syscall.asm"
 
 idtr: dw idt.end - idt - 1
       dq idt

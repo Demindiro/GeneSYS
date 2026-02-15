@@ -83,15 +83,18 @@ syscall.log:
 	ret
 
 syscall.halt:
-	; clear stack frame and reconstruct iretq arguments
-	mov rsp, isr
-	mov qword [isr.rip   ], rcx
-	mov qword [isr.rflags], r11
-	mov qword [isr.cs    ], GDT.USER_CS
-	; rsp is already set up properly
-	mov qword [isr.ss    ], GDT.USER_SS
+	; clear stack frame and reconstruct ISR arguments
+	mov rsp, _stack.end
+	push GDT.USER_SS
+	sub rsp, 8  ; rsp is already set up properly
+	push r11
+	push GDT.USER_CS
+	push rcx
+	isr_pushall
 	sti
 	hlt
+	cli
+	isr_popall
 	iretq
 
 syscall.identify:

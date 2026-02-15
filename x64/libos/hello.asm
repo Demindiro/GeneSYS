@@ -47,7 +47,13 @@ exception_invalid_op:
 	jmp exception_end
 
 interrupt:
+	cmp eax, 1
+	je interrupt_debug_message
 	trace msg_interrupt
+	jmp exception_end
+
+interrupt_debug_message:
+	trace msg_interrupt_debug_message
 	jmp exception_end
 
 
@@ -68,7 +74,9 @@ msg_hello: db "Hello world!", 10
 .end:
 msg_identified: db "GeneSYS identified", 10
 .end:
-msg_interrupt: db "Received interrupt", 10
+msg_interrupt: db "Received unknown interrupt", 10
+.end:
+msg_interrupt_debug_message: db "Received debug message", 10
 .end:
 
 err_div:   db "error: divide by zero"

@@ -142,7 +142,8 @@ debug.cmd_syslog:
 debug.cmd_message:
 	mov rax, [libos.sysconf_base]
 	mov rax, [rax + SYSCALL.SYSCONF.INTERRUPT]
-	mov [isr.rip], rax
+	mov qword [isr.rip], rax
+	mov qword [isr.rax], 1
 	ret
 
 ; rsi: message base
