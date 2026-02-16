@@ -2,8 +2,10 @@ DEBUG.RX.BUFFER_SIZE = 1 shl 10
 DEBUG.TX.BUFFER_SIZE = 1 shl 10
 
 debug.init:
-	mov word [debug.tx.cur], DEBUG.TX.BUFFER_SIZE
-	ret
+	; send a single zero byte to terminate previous data
+	inc dword [debug.tx.head]
+	mov edx, COM1.IOBASE
+	jmp comx.enable_tx_intr
 
 debug.handle:
 	; fall through to debug.handle_rx
@@ -58,88 +60,128 @@ debug.handle_rx:
 
 debug.handle_tx:
 	mov edx, COM1.IOBASE
-	movsx rsi, word [debug.tx.cur]  ; signed!!
-	cmp si, DEBUG.TX.BUFFER_SIZE
+@@:	; check there is any data to write at all
+	mov ecx, [debug.tx.tail]
+	cmp ecx, [debug.tx.head]
 	je comx.disable_tx_intr
-	add rsi, debug.tx.buffer
-	; just in case of spurious/shared interrupt
-@@:	comx.jmp_if_write_full .e
-	lodsb
+	; only write if there is place in the buffer
+	comx.jmp_if_write_full .e
+	mov esi, ecx
+	and esi, DEBUG.TX.BUFFER_SIZE - 1
+	inc ecx
+	mov [debug.tx.tail], ecx
+	movzx eax, byte [debug.tx.buffer + rsi]
 	comx.write_byte
-	test al, al
-	jnz @b
-	mov word [debug.tx.cur], DEBUG.TX.BUFFER_SIZE
-	jmp comx.disable_tx_intr
-.e:	sub si, debug.tx.buffer and 0xffff
-	mov [debug.tx.cur], si
-	ret
+	jmp @b
+.e:	ret
 
 times ((-$) and 7) int3
 debug.commands:
 	dq debug.cmd_echo
 	dq debug.cmd_identify
 	dq debug.cmd_syslog
+	dq debug.cmd_message
 DEBUG.COMMAND_MAX = ($ - debug.commands) / 8
 
 debug.cmd_echo:
-	mov rdi, debug.tx.buffer
-	mov ebx, ecx
+	sub rsp, 512
+	mov rdi, rsp
 	xor eax, eax
 	stosb
 	rep movsb
-	lea ecx, [ebx + 1]
-	jmp debug.tx.send
+	mov ecx, edi
+	sub ecx, esp
+	mov rsi, rsp
+	int3
+	call debug.tx.send
+	add rsp, 512
+	ret
 
 debug.cmd_identify:
-	mov rdi, debug.tx.buffer
-	mov eax, 0x86640000
-	stosd
-	mov rax, "GeneSYS "
-	stosq
-	mov rax, "2026/02/"
-	stosq
-	mov eax, "02"
-	stosw
-	mov ecx, 22
-	jmp debug.tx.send
+	sub rsp, 64
+	mov rdi, rsp
+	mov rsi, .msg
+	mov ecx, .msg_end - .msg
+	rep movsb
+	mov rsi, rsp
+	mov ecx, .msg_end - .msg
+	call debug.tx.send
+	add rsp, 64
+	ret
+.msg: db 0, 0, 0, 0x64, 0x86, "GeneSYS 2026/02/13"
+.msg_end:
 
 debug.cmd_syslog:
 	cmp rcx, 8
 	jb .e
 	lodsq
 	call syslog.get_by_timestamp
-	mov rdi, debug.tx.buffer
-	test esi, esi
+	mov rdi, rsp
+	test rsi, rsi
 	jz .none
-	stosq
-	xor eax, eax
-	stosd
+	sub rsp, 512
+	mov  byte [rsp + 0], 0
+	mov qword [rsp + 1], rax
+	mov dword [rsp + 9], 0
+	lea rdi, [rsp + 13]
 	rep movsb
 	mov ecx, edi
-	sub ecx, debug.tx.buffer and 0xffffffff
-	jmp debug.tx.send
+	sub ecx, esp
+	mov rsi, rsp
+	call debug.tx.send
+	add rsp, 512
 .e:	ret
 .none:
-	mov rax, -1
-	stosq
-	mov ecx, 8
-	jmp debug.tx.send
+	push 0
+	mov rsi, rsp
+	mov ecx, 1
+	call debug.tx.send
+	pop rax
+	ret
 
-; debug.tx.buffer: data base
-; rcx: length
+debug.cmd_message:
+	; avoid recursive debug message interrupts,
+	; which easily could lead to a stack overflow
+	mov eax, [libos.flags]
+	bts eax, LIBOS.FLAGS.INTR_DEBUG_PENDING
+	jc .e
+	mov [libos.flags], eax
+	call sysconf.push_frame
+	mov rax, [rsi + SYSCALL.SYSCONF.INTERRUPT]
+	mov qword [isr.rip], rax
+	mov qword [isr.rax], LIBOS.INTR.DEBUG
+.e:	ret
+
+; rsi: message base
+; rcx: message length
+debug.event_syslog:
+	sub rsp, 64
+	mov rdi, rsp
+	mov eax, 1
+	stosw
+	rep movsb
+	mov ecx, edi
+	sub ecx, esp
+	mov rsi, rsp
+	call debug.tx.send
+	add rsp, 64
+	ret
+
+; rsi: data base. Must have 4 extra bytes at tail for CRC32C!
+; rcx: data length
 debug.tx.send:
 	; append CRC32C
-	mov rsi, debug.tx.buffer
+	push rsi
 	lea rbx, [rsi + rcx + 4]
 	call crc32c
 	stosd
+	pop rsi
 	; COBS encode
 	; We could do the encoding during transmission, i.e. zero-copy,
 	; but it is very hard to get right (in assembly) as we need to look
 	; up to 254 bytes ahead, then cache that knowledge.
 	; Encoding beforehand requires 0.4% memory overhead but is much easier.
-	mov rdi, debug.tx.buffer.extra
-	mov rsi, debug.tx.buffer
+	mov ecx, [debug.tx.head]
 .l:	mov rdx, rsi
 @@:	movzx eax, byte [rdx]
 	inc rdx
@@ -152,27 +194,41 @@ debug.tx.send:
 	cmp rdx, rbx
 	jne @b
 .full:
-	mov ecx, edx
-	sub ecx, esi
-	lea eax, [ecx + 1]
-	stosb
-	rep movsb
+	mov eax, edx
+	sub eax, esi
+	inc eax
+	call .putbyte
+	call .copybytes
 	cmp rsi, rbx
 	jne .l
 	jmp .end
 .partial:
-	mov ecx, edx
-	sub ecx, esi
-	mov [rdi], cl
-	dec ecx
-	inc rdi
-	rep movsb
+	mov eax, edx
+	sub eax, esi
+	dec rdx
+	call .putbyte
+	call .copybytes
 	inc rsi
 	cmp rsi, rbx
 	jne .l
 .end:
 	xor eax, eax
-	stosb
-	mov word [debug.tx.cur], -8
+	call .putbyte
+	mov [debug.tx.head], ecx
 	mov edx, COM1.IOBASE
 	jmp comx.enable_tx_intr
+
+.putbyte:
+	mov edi, ecx
+	and edi, DEBUG.TX.BUFFER_SIZE - 1
+	inc ecx
+	mov [debug.tx.buffer + rdi], al
+	ret
+.copybytes:
+	cmp rsi, rdx
+	je .n
+@@:	lodsb
+	call .putbyte
+	cmp rsi, rdx
+	jne @b
+.n:	ret

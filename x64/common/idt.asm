@@ -8,6 +8,27 @@ IDT.DPL.0     =  0 shl 13
 IDT.DPL.3     =  3 shl 13
 IDT.P         =  1 shl 15
 
+macro isr_pushall { irp x,rdi,rsi,rbx,rdx,rcx,rax \{ push x \} }
+macro isr_popall  { irp x,rax,rcx,rdx,rbx,rsi,rdi \{ pop  x \} }
+
+virtual at (_stack.end - ((5+6)*8))
+	; pushed by us
+	; note only applies to interrupts!
+	; exceptions may push other stuff before!
+	isr.rax: dq ?
+	isr.rcx: dq ?
+	isr.rdx: dq ?
+	isr.rbx: dq ?
+	isr.rsi: dq ?
+	isr.rdi: dq ?
+	; pushed by the CPU and used by iretq
+	isr.rip:    dq ?
+	isr.cs:     dq ?
+	isr.rflags: dq ?
+	isr.rsp:    dq ?
+	isr.ss:     dq ?
+end virtual
+
 x = 0
 macro g nr, ist, target {
 	assert nr = x
@@ -83,7 +104,30 @@ idt.ex_of:
 idt.ex_br:
 	hlt
 idt.ex_ud:
-	hlt
+	cmp byte [rsp + 8], GDT.USER_CS
+	jne .kernel_ud
+	push rbx
+	push rsi
+	mov rbx, [libos.sysconf_base]
+	mov rsi, [rbx + SYSCALL.SYSCONF.STACK]
+	sub rsi, 32
+	mov [rsi + SYSCONF.stack_frame.rdi   ], rdi
+	mov rdi, [isr.rip]
+	mov [rsi + SYSCONF.stack_frame.rdx   ], rdx
+	mov [rsi + SYSCONF.stack_frame.rax   ], rax
+	mov [rsi + SYSCONF.stack_frame.rip   ], rdi
+	mov rax, [rbx + SYSCALL.SYSCONF.EXC_INVALID_OP]
+	mov [rbx + SYSCALL.SYSCONF.STACK], rsi
+	mov rdi, rsi
+	pop rsi
+	pop rbx
+	mov [rsp], rax
+	iretq
+.kernel_ud:
+	mov rsi, idt.msg_kernel_ud
+	mov ecx, idt.msg_kernel_ud.len
+	jmp panic
+
 idt.ex_nm:
 	hlt
 idt.ex_df:
@@ -122,8 +166,11 @@ idt.intr_unmapped:
 
 idt.intr_com1:
 	cld
-	irp x,rax,rcx,rdx,rbx,rsi,rdi { push x }
+	isr_pushall
 	call debug.handle
-	irp x,rdi,rsi,rbx,rdx,rcx,rax { pop  x }
 	lapic.eoi
+	isr_popall
 	iretq
+
+idt.msg_kernel_ud: db "PANIC: #UD in kernel mode", 10
+.len = $ - idt.msg_kernel_ud

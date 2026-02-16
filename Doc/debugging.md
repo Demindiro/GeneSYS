@@ -70,10 +70,10 @@ Response:
 Request:
 - a `u64` timestamp which *should* represent nanoseconds since boot.
 
-Response: the first log entry that comes right at or after the given timestamp.
+Response: the first log entry that comes right at or after the given timestamp,
+or an empty packet if none.
 
-- a `u64` timestamp, or `-1` if none.
-  In this case, no further data follows.
+- a `u64` timestamp.
 - a `u32` describing the source of the log entry.
   The exact meaning depends on the platform.
 - an arbitrary byte string.
@@ -115,3 +115,16 @@ Request:
 ### 13. Store u64
 ### 14. Load u128
 ### 15. Store u128
+
+
+Events
+------
+
+Events can be sent at any time.
+
+Events are prefixed with a one byte,
+then an single byte identifier.
+
+#### 0. Syslog
+
+Contains an arbitrary string, which *should* be UTF-8.

@@ -58,6 +58,10 @@ IA32_EFER.SCE = 1 shl  0
 IA32_EFER.LME = 1 shl  8
 IA32_EFER.NXE = 1 shl 11
 
+LIBOS.FLAGS.INTR_DEBUG_PENDING = 0
+LIBOS.INTR.TIMER =  1
+LIBOS.INTR.DEBUG = 31
+
 use64
 
 org 0xffffffffc0000000
@@ -164,10 +168,12 @@ exec:
 	call syscall.init
 	mov qword [syslog.head], 0
 	mov edx, COM1.IOBASE
-	call comx.init
-	call debug.init
+	; initialize ioapic and lapic as the very first thing
+	; so we don't confuse COMx interrupts
 	call ioapic.init
 	call lapic.init
+	call comx.init
+	call debug.init
 
 .load_libos:
 	; allocate and initialize page table
@@ -226,16 +232,26 @@ exec:
 	irp x,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 { xorps xmm#x, xmm#x }
 	sysretq
 
+; enable interrupts and halt forever.
+; interrupts need to be enabled so the debug interface works.
+;
+; inputs: rsi=msg base  rcx=msg len
+panic:
+	call syslog.push
+@@:	sti
+	hlt
+	jmp @b
+
 include "../common/gdt.asm"
 include "../common/crc32c.asm"
 include "allocator.asm"
-include "syscall.asm"
 include "syslog.asm"
 include "ioapic.asm"
 include "lapic.asm"
 include "comx.asm"
 include "debug.asm"
 include "idt.asm"
+include "syscall.asm"
 
 idtr: dw idt.end - idt - 1
       dq idt
@@ -250,8 +266,11 @@ dat:
 ; "stack is reserved" :^)))))
 _stack: rb 1024
 .end:
-syscall.scratch: dq ?
 syslog.head: dq ?
+libos.sysconf_base: dq ?
+libos.flags:        dq ?
+debug.tx.head: dd ?
+debug.tx.tail: dd ?
 rb ((-$) and 63)  ; pad to cache line
 
 syslog.buffer: rb SYSLOG.BUFFER_SIZE
@@ -277,10 +296,8 @@ tss:
 .iopb: dw ?
 .end:
 
-debug.tx.buffer.extra: rb 8  ; extra bytes for COBS stuffing
 debug.tx.buffer: rb DEBUG.TX.BUFFER_SIZE
 debug.rx.buffer: rb DEBUG.RX.BUFFER_SIZE
-debug.tx.cur: dw ?  ; signed!!
 debug.rx.len: dw ?
 debug.rx.cap: dw ?
 debug.rx.prev: db ?

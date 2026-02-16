@@ -94,9 +94,9 @@ def cmd_echo(sock, data):
 
 def cmd_identify(sock):
     r = cmd(sock, 1, b'')
-    version = int.from_bytes(r[0:2], 'little')
-    arch    = int.from_bytes(r[2:4], 'little')
-    extra   = r[4:]
+    version = int.from_bytes(r[1:3], 'little')
+    arch    = int.from_bytes(r[3:5], 'little')
+    extra   = r[5:]
     print('version:', hex(version))
     print('architecture:', hex(arch))
     print('extra:', extra)
@@ -105,9 +105,10 @@ def cmd_syslog(sock):
     timestamp = None
     while True:
         r = cmd(sock, 2, (timestamp or 0).to_bytes(8, 'little'))
-        n_timestamp = int.from_bytes(r[0:8], 'little')
-        if n_timestamp == ((1 << 64) - 1):
+        r = r[1:]
+        if r == b'':
             break
+        n_timestamp = int.from_bytes(r[0:8], 'little')
         src = int.from_bytes(r[8:12], 'little')
         msg = r[12:]
         try:

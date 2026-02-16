@@ -3,6 +3,24 @@ MSR.LSTAR  = 0xc0000082
 MSR.CSTAR  = 0xc0000083
 MSR.SFMASK = 0xc0000084
 
+SYSCALL.SYSCONF:
+.EXC_DIVISION    =  0
+.EXC_OVERFLOW    =  8
+.EXC_INVALID_OP  = 16
+.EXC_PAGE_FAULT  = 24
+.EXC_FPU         = 32
+.EXC_MACHINE     = 40
+.INTERRUPT       = 48
+.STACK           = 56
+
+virtual at 0
+	SYSCONF.stack_frame:
+		.rip:    dq ?
+		.rax:    dq ?
+		.rdx:    dq ?
+		.rdi:    dq ?
+end virtual
+
 syscall.init:
 	mov ecx, MSR.STAR
 	xor eax, eax
@@ -20,18 +38,23 @@ syscall.init:
 	wrmsr
 	ret
 
+; note that system calls are non-reentrant,
+; i.e. interrupts are never enabled.
+;
+; the sole exception to this rule is syscall.halt,
+; which does enable interrupts but never returns here,
+; instead using iretq to return to user space directly.
 syscall.entry64:
-	mov [syscall.scratch], rsp
-	mov rsp, _stack.end
-	irp x,rcx,rbx,rsi,rdi { push x }
+	mov [_stack.end - 8], rsp
+	mov rsp, _stack.end - 8
+	irp x,rcx,rbx,rdi,rsi { push x }
 
 	dec eax
 	cmp eax, SYSCALL.MAX_SYSID
 	ja .bad_id
 	call qword [syscall.table + rax*8]
 
-	irp x,rdi,rsi,rbx,rcx { pop x }
-	mov rsp, [syscall.scratch]
+	irp x,rsi,rdi,rbx,rcx,rsp { pop x }
 	sysretq
 
 .bad_id:
@@ -48,6 +71,10 @@ syscall.table:
 	f 1, log
 	f 2, halt
 	f 3, identify
+	f 4, set_configuration_space
+	f 5, eoi
+	f 6, read_debug_message
+	f 7, send_debug_message
 SYSCALL.MAX_SYSID = x
 purge f, x
 
@@ -59,11 +86,66 @@ syscall.log:
 	ret
 
 syscall.halt:
+	; clear stack frame and reconstruct ISR arguments
+	mov rsp, _stack.end
+	push GDT.USER_SS
+	sub rsp, 8  ; rsp is already set up properly
+	push r11
+	push GDT.USER_CS
+	push rcx
+	isr_pushall
 	sti
 	hlt
-	ret
+	cli
+	isr_popall
+	iretq
 
 syscall.identify:
 	mov rax, "GeneSYS"
 	mov rdx, 0x20260130
+	ret
+
+syscall.set_configuration_space:
+	; ensure the OS doesn't attempt to corrupt kernel space
+	; simply forbidding negative half is sufficient
+	test rsi, rsi
+	js syscall.__panic  ; TODO
+	mov [libos.sysconf_base], rsi
+	ret
+
+syscall.eoi:
+	cmp edx, LIBOS.INTR.DEBUG
+	je .enable_debug
+	ud2
+	ret
+.enable_debug:
+	and byte [libos.flags], not (1 shl LIBOS.FLAGS.INTR_DEBUG_PENDING)
+	ret
+
+syscall.read_debug_message:
+	ud2
+	ret
+syscall.send_debug_message:
+	ud2
+	ret
+
+syscall.__panic:
+@@:	hlt
+	jmp @b
+
+; inputs: none
+; outputs: rsi=sysconf base
+sysconf.push_frame:
+	mov rsi, [libos.sysconf_base]
+	mov rdi, [rsi + SYSCALL.SYSCONF.STACK]
+	sub rdi, 32
+	mov rax, [isr.rip]
+	mov rcx, [isr.rax]
+	mov rdx, [isr.rdx]
+	mov rbx, [isr.rdi]
+	mov [rsi + SYSCALL.SYSCONF.STACK], rdi
+	mov [rdi + SYSCONF.stack_frame.rip], rax
+	mov [rdi + SYSCONF.stack_frame.rax], rcx
+	mov [rdi + SYSCONF.stack_frame.rdx], rdx
+	mov [rdi + SYSCONF.stack_frame.rdi], rbx
 	ret
