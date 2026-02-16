@@ -73,6 +73,8 @@ syscall.table:
 	f 3, identify
 	f 4, set_configuration_space
 	f 5, eoi
+	f 6, read_debug_message
+	f 7, send_debug_message
 SYSCALL.MAX_SYSID = x
 purge f, x
 
@@ -118,6 +120,13 @@ syscall.eoi:
 	ret
 .enable_debug:
 	and byte [libos.flags], not (1 shl LIBOS.FLAGS.INTR_DEBUG_PENDING)
+	ret
+
+syscall.read_debug_message:
+	ud2
+	ret
+syscall.send_debug_message:
+	ud2
 	ret
 
 syscall.__panic:
