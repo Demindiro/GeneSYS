@@ -603,7 +603,7 @@ xsdt_scan_tables:
 	mov rdi, [start.kernel_phys]
 	lea rbx, [rsi + rcx]
 	add rsi, MCFG.sizeof
-	add rdi, (1 shl 21) - BOOTINFO.sizeof
+	add rdi, (1 shl 21) - BOOTINFO.sizeof + BOOTINFO.pcie
 	; FIXME length check against PCIE.MAX_ROOTS
 	cmp rsi, rbx
 	je .r
