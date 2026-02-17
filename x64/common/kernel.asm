@@ -26,10 +26,8 @@
 ; A gap is added between code and data to help catch erroneous memory operations,
 ; but both PD entries are in the same cache line.
 
+include "kernel.inc"
 include "../util/registers.asm"
-
-;; structure passed by the bootloader
-BOOTINFO.sizeof = 48
 
 temp.base        = 0xffffffffc0600000
 allocator.bitmap = 0xffffffffc0a00000
