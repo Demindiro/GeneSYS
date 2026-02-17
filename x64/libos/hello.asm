@@ -7,9 +7,12 @@ SYS.HALT     = 2
 SYS.IDENTIFY = 3
 SYS.SET_CONFIG_SPACE = 4
 SYS.EOI      = 5
+SYS.MAP_PCIE_CONFIG  = 8
 
 INTR.TIMER = 1
 INTR.DEBUG = 31
+
+PCIE.BASE = 1 shl 40
 
 macro trace msg {
 	mov eax, SYS.LOG
@@ -36,9 +39,12 @@ start:
 	lea rsi, [sysconf]
 	syscall
 
-	ud2
+	mov eax, SYS.MAP_PCIE_CONFIG
+	mov rdi, PCIE.BASE
+	xor edx, edx
+	syscall
 
-	jmp halt
+	ud2
 
 
 

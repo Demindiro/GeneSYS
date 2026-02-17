@@ -75,6 +75,7 @@ syscall.table:
 	f 5, eoi
 	f 6, read_debug_message
 	f 7, send_debug_message
+	f 8, map_pcie_config
 SYSCALL.MAX_SYSID = x
 purge f, x
 
@@ -127,6 +128,62 @@ syscall.read_debug_message:
 	ret
 syscall.send_debug_message:
 	ud2
+	ret
+
+syscall.map_pcie_config:
+	mov r15, 0 ; FIXME aaaaaa
+	test rdi, rdi
+	js   syscall.__panic
+	test rdi, not (-1 shl 28)
+	jnz  syscall.__panic
+	mov  rcx, cr3
+	irp x,3,2,1 {
+		and  rcx, not 511
+		mov  rax, rcx
+		and  rcx,      (-1 shl 21)
+		and  rax, not ((-1 shl 21) + 0xfff)
+		or   rcx, PAGE.P + PAGE.RW + PAGE.PS
+		mov  [paging.pd.temp], rcx
+		if x < 3
+			invlpg [temp.base]
+		end if
+		if x > 1
+			lea  rdx, [temp.base + rax]
+			mov  rax, rdi
+			shr  rax, (9 * x) + 12
+			and  rax, 511
+			mov  rcx, [rdx + 8*rax]
+			test rcx, PAGE.P
+			jnz   @f
+			call .alloc
+	@@:		
+		end if
+	}
+	mov rdi, temp.base + 0x11000
+	mov ecx, 256
+	lea r14, [bootinfo.pcie]
+	mov rax, [bootinfo.pcie]
+	or  rax, PAGE.P + PAGE.RW + PAGE.PS
+@@:	stosq
+	add rax, 1 shl 21
+	loop @b
+	hlt
+	xor  eax, eax
+	mov  [paging.pd.temp], rax
+	invlpg [temp.base]
+	hlt
+	mov eax, -1
+	mov edx, PCIE.MAX_ROOTS
+	ret
+.alloc:
+	; FIXME no hardcode! hardcode very bad!
+	mov rcx, [paging.pd.temp]
+	and rcx, not 0xfff
+	add rcx, 0x10000
+	add rcx, r15
+	add r15, 0x1000
+	or  rcx, PAGE.P + PAGE.RW
+	mov [rdx + 8*rax], rcx
 	ret
 
 syscall.__panic:
