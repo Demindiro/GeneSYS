@@ -1,3 +1,5 @@
+PCIE.MAX_ROOTS = 4
+
 KERNEL.CODE.START = 0xffffffffc0000000
 KERNEL.CODE.END   = KERNEL.CODE.START + (1 shl 21)
 KERNEL.DATA.START = KERNEL.CODE.START + (7 shl 21)
@@ -11,5 +13,7 @@ virtual at 0
 		.memmap.end:     dq ?
 		.libos.start:    dq ?
 		.libos.end:      dq ?
+		; list of PCIe root bases
+		.pcie: rb (PCIE.MAX_ROOTS * 16)
 		.sizeof:
 end virtual

@@ -132,6 +132,11 @@ f SetMem          ; EFI 1.1+
 f CreateEventEx   ; UEFI 2.0+
 purge f, x
 
+; 4.6.1 EFI_CONFIGURATION_TABLE
+EFI_CONFIGURATION_TABLE.VendorGuid  = 0
+EFI_CONFIGURATION_TABLE.VendorTable = 16
+EFI_CONFIGURATION_TABLE.sizeof      = 24
+
 ; 7.2.1 EFI_BOOT_SERVICES.AllocatePages()
 x = 0
 macro f name {
@@ -179,6 +184,46 @@ EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL.OutputString = 8 ; EFI_TEXT_STRING
 efi_invalid_parameter = (1 shl 63) or 2
 efi_buffer_too_small  = (1 shl 63) or 5
 efi_out_of_resources  = (1 shl 63) or 9
+
+
+virtual at 0
+	XSDT:
+		.signature:       rb 4
+		.length:          dd ?
+		.revision:        db ?
+		.checksum:        db ?
+		.oemid:           rb 6
+		.oemtableid:      rb 8
+		.oemrevision:     dd ?
+		.creatorid:       dd ?
+		.creatorrevision: dd ?
+		.sizeof:
+end virtual
+
+virtual at 0
+	MCFG:
+		.signature:       rb 4
+		.length:          dd ?
+		.revision:        db ?
+		.checksum:        db ?
+		.oemid:           rb 6
+		.oemtableid:      rb 8
+		.oemrevision:     dd ?
+		.creatorid:       dd ?
+		.creatorrevision: dd ?
+		                  rb 8  ; reserved
+		.sizeof:
+end virtual
+
+virtual at 0
+	MCFG.ENTRY:
+		.address:         dq ?
+		.segment:         dw ?
+		.bus_start:       db ?
+		.bus_end:         db ?
+		                  rb 4  ; reserved
+		.sizeof:
+end virtual
 
 
 ; https://board.flatassembler.net/topic.php?t=8619
@@ -275,11 +320,55 @@ end virtual
 	lea rsi, [kernel]
 	mov ecx, kernel.end - kernel
 	rep movsb
+	; fill with int3
 	mov ecx, edi
 	neg ecx
 	and ecx, not (-1 shl 21)
+	sub ecx, BOOTINFO.sizeof
 	mov al, 0xcc
 	rep stosb
+	; fill bootinfo with 0
+	mov ecx, BOOTINFO.sizeof
+	xor eax, eax
+	rep stosb
+
+
+	; scan for ACPI 2.0 table
+	mov rcx, [r15 + EFI_SYSTEM_TABLE.NumberOfTableEntries]
+	mov rsi, [r15 + EFI_SYSTEM_TABLE.ConfigurationTable]
+	mov rdi, rcx
+	imul rdi, EFI_CONFIGURATION_TABLE.sizeof
+	add rdi, rsi
+	lea rdi, [rsi + rcx]
+	mov r8, [efi_acpi_20_table_guid + 0]
+	mov r9, [efi_acpi_20_table_guid + 8]
+	sub rsi, EFI_CONFIGURATION_TABLE.sizeof
+@@:	add rsi, EFI_CONFIGURATION_TABLE.sizeof
+	cmp rsi, rdi
+	je  panic.acpi_table_not_found
+	mov rax, [rsi + 0]
+	mov rdx, [rsi + 8]
+	xor rax, r8
+	xor rdx, r9
+	or  rax, rdx
+	jne @b
+
+	; verify table and load XSDT
+	mov rsi, [rsi + EFI_CONFIGURATION_TABLE.VendorTable]
+	mov rax, "RSD PTR "
+	cmp [rsi], rax
+	jne panic.acpi_table_bad_signature
+	cmp byte [rsi + 15], 2
+	jne panic.acpi_table_no_xsdt
+	mov rsi, [rsi + 24]
+	cmp dword [rsi + XSDT.signature], "XSDT"
+	jne panic.xsdt_table_bad_signature
+	mov ecx, [rsi + XSDT.length]
+	lea rdi, [rsi + rcx]
+	add rsi, XSDT.sizeof
+
+	call xsdt_scan_tables
+
 
 	uefi.trace "GetMemoryMap + ExitBootServices" ; no tracing or any UEFI routines between these two calls!
 	; attempt stack alloc to simplify things
@@ -471,15 +560,73 @@ uefi.print:
 
 uefi._panic:
 	call uefi._trace
+halt:
 @@:	cli
 	hlt
 	jmp @b
+
+panic.acpi_table_not_found:
+	uefi.trace "PANIC: ACPI table not found"
+	jmp halt
+panic.acpi_table_bad_signature:
+	uefi.trace "PANIC: ACPI RSDP table has unexpected signature"
+	jmp halt
+panic.acpi_table_no_xsdt:
+	uefi.trace "PANIC: RSDT unsupported (expect XSDT)"
+	jmp halt
+panic.xsdt_table_bad_signature:
+	uefi.trace "PANIC: XSDT has unexpected signature"
+	jmp halt
+panic.mcfg_too_many_roots:
+	uefi.trace "TODO: MCFG has an unexpected amount of PCIe roots"
+	jmp halt
+
+
+; scan subtables
+; in particular, we want:
+; - "MCFG" for PCIe
+xsdt_scan_tables:
+	mov r8, rsi
+	mov r9, rdi
+	jmp .c
+@@:	mov rsi, [r8]
+	cmp dword [rsi], "MCFG"
+	je  .mcfg
+.r:	add r8, 8
+.c:	cmp r8, r9
+	jne @b
+	ret
+.mcfg:
+	mov ecx, [rsi + MCFG.length]
+	cmp ecx, MCFG.sizeof + (16 * PCIE.MAX_ROOTS)
+	ja panic.mcfg_too_many_roots
+	mov rdi, [start.kernel_phys]
+	lea rbx, [rsi + rcx]
+	add rsi, MCFG.sizeof
+	add rdi, (1 shl 21) - BOOTINFO.sizeof
+	; FIXME length check against PCIE.MAX_ROOTS
+	cmp rsi, rbx
+	je .r
+@@:	movups xmm0, [rsi]
+	add rsi, 16
+	movaps [rdi], xmm0
+	add rdi, 16
+	cmp rsi, rbx
+	je .r
+	jmp @b
+
 
 include "../util/memmap.asm"
 
 uefi.println._crlf: db 13, 10
 hello_uefi: db "Hello, UEFI!"
 match y,rodata._list { irp x,y { x } }
+
+align 16
+efi_acpi_20_table_guid:
+	dd 0x8868e871
+	dw 0xe4f1,0x11d3
+	db 0xbc,0x22,0x00,0x80,0xc7,0x3c,0x88,0x81
 
 include "../util/paging.asm"
 include "../util/registers.asm"

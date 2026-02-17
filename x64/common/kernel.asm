@@ -88,6 +88,8 @@ virtual at (exec.end - BOOTINFO.sizeof)
 	.libos.start: dq ?
 	; the end (excl) address of the initial libos
 	.libos.end:   dq ?
+	; list of PCIe root bases
+	.pcie:        rb (PCIE.MAX_ROOTS * 16)
 end virtual
 exec:
 	; clear data region
