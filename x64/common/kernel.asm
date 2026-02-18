@@ -216,9 +216,6 @@ exec:
 	; PD
 	lea rax, [r15 + 0x2000 + (PAGE.US or PAGE.RW or PAGE.P)]
 	mov [r14 + 0x1000], rax
-	; page table
-	lea rax, [r15 + (PAGE.PS or PAGE.US or PAGE.P)]
-	mov [r14 + 0x3000 - 8*8], rax
 	; OS code/data
 	call allocator.alloc_2m
 	or rax, PAGE.PS or PAGE.US or PAGE.RW or PAGE.P
