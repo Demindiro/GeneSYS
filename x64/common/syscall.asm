@@ -131,6 +131,8 @@ syscall.send_debug_message:
 	ret
 
 syscall.map_pcie_config:
+	ud2
+if 0
 	mov r15, 0 ; FIXME aaaaaa
 	test rdi, rdi
 	js   syscall.__panic
@@ -185,6 +187,7 @@ syscall.map_pcie_config:
 	or  rcx, PAGE.P + PAGE.RW
 	mov [rdx + 8*rax], rcx
 	ret
+end if
 
 syscall.__panic:
 @@:	hlt

@@ -6,9 +6,7 @@
 ;      0xffffffffc03fb000 - 0xffffffffc03fc000 : LAPIC
 ;      0xffffffffc03fd000 - 0xffffffffc03fe000 : guard (unmapped)
 ;      0xffffffffc03ff000 - 0xffffffffc0400000 : IOAPIC
-; 2: 0xffffffffc0400000 - 0xffffffffc0600000 : guard (unmapped)
-; 3: 0xffffffffc0600000 - 0xffffffffc0800000 : temp page (unmapped/RW)
-; 4: 0xffffffffc0800000 - 0xffffffffc0a00000 : guard (unmapped)
+; 2: 0xffffffffc0400000 - 0xffffffffc0a00000 : guard (unmapped)
 ; 5: 0xffffffffc0a00000 - 0xffffffffc0b00000 : allocator bitmap
 ; 6: 0xffffffffc0c00000 - 0xffffffffc0e00000 : guard (unmapped)
 ; 7: 0xffffffffc0e00000 - 0xffffffffc1000000 : data  (RW)
@@ -38,7 +36,6 @@
 include "kernel.inc"
 include "../util/registers.asm"
 
-temp.base        = 0xffffffffc0600000
 allocator.bitmap = 0xffffffffc0a00000
 paging.base      = 0xfffffffe00000000
 
@@ -55,7 +52,6 @@ paging.pdp.pd       = paging.pdp  + 8*511
 paging.pdp.pd_paging = paging.pdp + 8*504
 paging.pd.code      = paging.pd + 8*0
 paging.pd.pt_mmio   = paging.pd + 8*1
-paging.pd.temp      = paging.pd + 8*3
 paging.pd.pt_bitmap = paging.pd + 8*5
 paging.pd.data      = paging.pd + 8*7
 paging.pt_mmio.ioapic = paging.pt_mmio + 8*511
