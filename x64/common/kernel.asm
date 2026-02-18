@@ -25,12 +25,22 @@
 ;
 ; A gap is added between code and data to help catch erroneous memory operations,
 ; but both PD entries are in the same cache line.
+;
+; == LibOS kernel data ==
+;
+; Most OS-related items are stored in the data area,
+; but some such as page tables are stored separately.
+;
+; -- Page tables --
+;
+; range: 0xfffffffe00000000 - 0xfffffffe40000000 (1 GiB)
 
 include "kernel.inc"
 include "../util/registers.asm"
 
 temp.base        = 0xffffffffc0600000
 allocator.bitmap = 0xffffffffc0a00000
+paging.base      = 0xfffffffe00000000
 
 init_libos.base  = (1 shl 30) - (1 shl 21)
 
@@ -39,8 +49,10 @@ paging.pdp       = dat.end - 0x2000
 paging.pd        = dat.end - 0x3000
 paging.pt_bitmap = dat.end - 0x4000
 paging.pt_mmio   = dat.end - 0x5000
+paging.pd_paging = dat.end - 0x6000
 paging.pml4.pdp     = paging.pml4 + 8*511
 paging.pdp.pd       = paging.pdp  + 8*511
+paging.pdp.pd_paging = paging.pdp + 8*504
 paging.pd.code      = paging.pd + 8*0
 paging.pd.pt_mmio   = paging.pd + 8*1
 paging.pd.temp      = paging.pd + 8*3
@@ -49,7 +61,7 @@ paging.pd.data      = paging.pd + 8*7
 paging.pt_mmio.ioapic = paging.pt_mmio + 8*511
 paging.pt_mmio.lapic  = paging.pt_mmio + 8*509
 
-irp x,pml4,pdp,pd,pt_bitmap,pt_mmio { paging_phys.#x = (2 shl 21) + (paging.#x - dat.end) }
+irp x,pml4,pdp,pd,pd_paging,pt_bitmap,pt_mmio { paging_phys.#x = (2 shl 21) + (paging.#x - dat.end) }
 
 MSR.IA32_EFER = 0xc0000080
 IA32_EFER.SCE = 1 shl  0
@@ -148,6 +160,8 @@ exec:
 	; PDP
 	lea rax, [rbx + paging_phys.pd  + PAGE.A + PAGE.D + PAGE.RW + PAGE.P]
 	mov [paging.pdp.pd], rax
+	lea rax, [rbx + paging_phys.pd_paging + PAGE.A + PAGE.D + PAGE.RW + PAGE.P]
+	mov [paging.pdp.pd_paging], rax
 	; PML4
 	lea rax, [rbx + paging_phys.pdp + PAGE.A + PAGE.D + PAGE.RW + PAGE.P]
 	mov [paging.pml4.pdp], rax
@@ -180,10 +194,10 @@ exec:
 	call allocator.alloc_2m
 	mov r15, rax
 	or rax, PAGE.PS or PAGE.RW or PAGE.P
-	mov [paging.pd.temp], rax
+	mov [paging.pd_paging], rax
 	; zero out entire page
 	mov ecx, (1 shl 21) / 8
-	mov rdi, temp.base
+	mov rdi, paging.base
 	xor eax, eax
 	rep stosq
 	; copy kernel PML4
@@ -192,25 +206,24 @@ exec:
 	sub rsi, [bootinfo.phys_base]
 	add rsi, dat - (1 shl 21)
 	add rsi, 2048
-	mov rdi, temp.base + 2048
+	mov rdi, paging.base + 2048
 	mov ecx, 256
 	rep movsq
+	mov r14, paging.base
 	; PDP
 	lea rax, [r15 + 0x1000 + (PAGE.US or PAGE.RW or PAGE.P)]
-	mov [temp.base + 0x0000], rax
+	mov [r14 + 0x0000], rax
 	; PD
 	lea rax, [r15 + 0x2000 + (PAGE.US or PAGE.RW or PAGE.P)]
-	mov [temp.base + 0x1000], rax
+	mov [r14 + 0x1000], rax
 	; page table
 	lea rax, [r15 + (PAGE.PS or PAGE.US or PAGE.P)]
-	mov [temp.base + 0x3000 - 8*8], rax
+	mov [r14 + 0x3000 - 8*8], rax
 	; OS code/data
 	call allocator.alloc_2m
 	or rax, PAGE.PS or PAGE.US or PAGE.RW or PAGE.P
-	mov [temp.base + 0x3000 - 1*8], rax
+	mov [r14 + 0x3000 - 1*8], rax
 	; done setting up page tables
-	mov qword [paging.pd.temp], 0
-	invlpg [temp.base]
 	mov cr3, r15
 	; copy OS code
 	mov rsi, [bootinfo.libos.start]
