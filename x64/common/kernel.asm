@@ -6,9 +6,7 @@
 ;      0xffffffffc03fb000 - 0xffffffffc03fc000 : LAPIC
 ;      0xffffffffc03fd000 - 0xffffffffc03fe000 : guard (unmapped)
 ;      0xffffffffc03ff000 - 0xffffffffc0400000 : IOAPIC
-; 2: 0xffffffffc0400000 - 0xffffffffc0a00000 : guard (unmapped)
-; 5: 0xffffffffc0a00000 - 0xffffffffc0b00000 : allocator bitmap
-; 6: 0xffffffffc0c00000 - 0xffffffffc0e00000 : guard (unmapped)
+; 2: 0xffffffffc0400000 - 0xffffffffc0e00000 : guard (unmapped)
 ; 7: 0xffffffffc0e00000 - 0xffffffffc1000000 : data  (RW)
 ;
 ; Motivation: we want to minimize pointer chasing as kernel code/data
@@ -34,17 +32,17 @@
 ; range: 0xfffffffe00000000 - 0xfffffffe40000000 (1 GiB)
 
 include "kernel.inc"
+include "../util/paging.asm"
 include "../util/registers.asm"
 
-allocator.bitmap = 0xffffffffc0a00000
 paging.base      = 0xfffffffe00000000
+paging.base.end  = paging.base + (1 shl 21)
 
 init_libos.base  = (1 shl 30) - (1 shl 21)
 
 paging.pml4      = dat.end - 0x1000
 paging.pdp       = dat.end - 0x2000
 paging.pd        = dat.end - 0x3000
-paging.pt_bitmap = dat.end - 0x4000
 paging.pt_mmio   = dat.end - 0x5000
 paging.pd_paging = dat.end - 0x6000
 paging.pml4.pdp     = paging.pml4 + 8*511
@@ -52,12 +50,11 @@ paging.pdp.pd       = paging.pdp  + 8*511
 paging.pdp.pd_paging = paging.pdp + 8*504
 paging.pd.code      = paging.pd + 8*0
 paging.pd.pt_mmio   = paging.pd + 8*1
-paging.pd.pt_bitmap = paging.pd + 8*5
 paging.pd.data      = paging.pd + 8*7
 paging.pt_mmio.ioapic = paging.pt_mmio + 8*511
 paging.pt_mmio.lapic  = paging.pt_mmio + 8*509
 
-irp x,pml4,pdp,pd,pd_paging,pt_bitmap,pt_mmio { paging_phys.#x = (2 shl 21) + (paging.#x - dat.end) }
+irp x,pml4,pdp,pd,pd_paging,pt_mmio { paging_phys.#x = (2 shl 21) + (paging.#x - dat.end) }
 
 MSR.IA32_EFER = 0xc0000080
 IA32_EFER.SCE = 1 shl  0
@@ -149,8 +146,6 @@ exec:
 	mov [paging.pd.code], rax
 	lea rax, [rbx + (1 shl 21) + PAGE.A + PAGE.D + PAGE.PS + PAGE.RW + PAGE.G + PAGE.P]
 	mov [paging.pd.data], rax
-	lea rax, [rbx + paging_phys.pt_bitmap + PAGE.A + PAGE.D + PAGE.RW + PAGE.P]
-	mov [paging.pd.pt_bitmap], rax
 	lea rax, [rbx + paging_phys.pt_mmio   + PAGE.A + PAGE.D + PAGE.RW + PAGE.P]
 	mov [paging.pd.pt_mmio  ], rax
 	; PDP
@@ -174,7 +169,6 @@ exec:
 	xor edx, edx
 	wrmsr
 
-	call allocator.init
 	call syscall.init
 	mov qword [syslog.head], 0
 	mov edx, COM1.IOBASE
@@ -185,9 +179,12 @@ exec:
 	call comx.init
 	call debug.init
 
+	mov r13, [bootinfo.memmap.start]
+	mov r12, [r13]
+
 .load_libos:
 	; allocate and initialize page table
-	call allocator.alloc_2m
+	call .alloc_2m
 	mov r15, rax
 	or rax, PAGE.PS or PAGE.RW or PAGE.P
 	mov [paging.pd_paging], rax
@@ -213,7 +210,7 @@ exec:
 	lea rax, [r15 + 0x2000 + (PAGE.US or PAGE.RW or PAGE.P)]
 	mov [r14 + 0x1000], rax
 	; OS code/data
-	call allocator.alloc_2m
+	call .alloc_2m
 	or rax, PAGE.PS or PAGE.US or PAGE.RW or PAGE.P
 	mov [r14 + 0x3000 - 1*8], rax
 	; done setting up page tables
@@ -238,6 +235,27 @@ exec:
 	irp x,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 { xorps xmm#x, xmm#x }
 	sysretq
 
+exec.alloc_2m:
+	; align to 2M boundary and step
+	add  r12, not (-1 shl 21)
+	and  r12,     (-1 shl 21)
+	mov  rax, r12
+	add  r12, 1 shl 21
+	; ensure the page is within the current region
+	cmp  r12, [r13 + 8]
+	ja   .next_region
+	; ensure the page isn't already used by the kernel
+	mov  rdx, rax
+	sub  rdx, [bootinfo.phys_base]
+	cmp  rdx, 2 shl 21
+	jb   exec.alloc_2m
+	ret
+.next_region:
+	add  r13, 16
+	mov  r12, [r13]
+	jmp  exec.alloc_2m
+	
+
 ; enable interrupts and halt forever.
 ; interrupts need to be enabled so the debug interface works.
 ;
@@ -250,7 +268,6 @@ panic:
 
 include "../common/gdt.asm"
 include "../common/crc32c.asm"
-include "allocator.asm"
 include "syslog.asm"
 include "ioapic.asm"
 include "lapic.asm"
@@ -280,10 +297,6 @@ debug.tx.tail: dd ?
 rb ((-$) and 63)  ; pad to cache line
 
 syslog.buffer: rb SYSLOG.BUFFER_SIZE
-.end:
-
-allocator.sets: rw ALLOCATOR.SETS
-.super:         rw ALLOCATOR.SUPERSETS
 .end:
 
 rb ((-$) and 7)
