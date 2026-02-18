@@ -169,6 +169,36 @@ exec:
 	xor edx, edx
 	wrmsr
 
+	mov r13, [bootinfo.memmap.start]
+	mov r12, [r13]
+
+.init_pagetables:
+	; allocate and initialize page table
+	call _init.alloc_2m
+	mov rbx, paging.base
+	sub rax, rbx
+	mov [paging.virt_to_phys], rax
+	add rax, rbx
+	or rax, PAGE.PS or PAGE.RW or PAGE.P
+	mov [paging.pd_paging], rax
+	; zero out entire page
+	mov ecx, (paging.base.end - paging.base) / 8
+	mov rdi, paging.base
+	xor eax, eax
+	rep stosq
+	; create linked chain of tables
+	mov rdi, paging.base
+	mov rbx, paging.base.end
+	mov [paging.free_table], rdi
+	mov rsi, rdi
+@@:	add rsi, 0x1000
+	mov [rdi], rsi
+	mov rdi, rsi
+	cmp rsi, rbx
+	jne @b
+
+.init_rest:
+	call paging.init
 	call syscall.init
 	mov qword [syslog.head], 0
 	mov edx, COM1.IOBASE
@@ -179,42 +209,12 @@ exec:
 	call comx.init
 	call debug.init
 
-	mov r13, [bootinfo.memmap.start]
-	mov r12, [r13]
-
 .load_libos:
-	; allocate and initialize page table
-	call .alloc_2m
-	mov r15, rax
-	or rax, PAGE.PS or PAGE.RW or PAGE.P
-	mov [paging.pd_paging], rax
-	; zero out entire page
-	mov ecx, (1 shl 21) / 8
-	mov rdi, paging.base
-	xor eax, eax
-	rep stosq
-	; copy kernel PML4
-	; TODO more hardcoding please :)
-	mov rsi, cr3
-	sub rsi, [bootinfo.phys_base]
-	add rsi, dat - (1 shl 21)
-	add rsi, 2048
-	mov rdi, paging.base + 2048
-	mov ecx, 256
-	rep movsq
-	mov r14, paging.base
-	; PDP
-	lea rax, [r15 + 0x1000 + (PAGE.US or PAGE.RW or PAGE.P)]
-	mov [r14 + 0x0000], rax
-	; PD
-	lea rax, [r15 + 0x2000 + (PAGE.US or PAGE.RW or PAGE.P)]
-	mov [r14 + 0x1000], rax
 	; OS code/data
-	call .alloc_2m
-	or rax, PAGE.PS or PAGE.US or PAGE.RW or PAGE.P
-	mov [r14 + 0x3000 - 1*8], rax
-	; done setting up page tables
-	mov cr3, r15
+	call _init.alloc_2m
+	mov  rdi, init_libos.base
+	lea  rsi, [rax + PAGE.P + PAGE.PS + PAGE.RW + PAGE.US]
+	call paging.map_2m
 	; copy OS code
 	mov rsi, [bootinfo.libos.start]
 	mov ecx, [bootinfo.libos.end  ]
@@ -235,7 +235,7 @@ exec:
 	irp x,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 { xorps xmm#x, xmm#x }
 	sysretq
 
-exec.alloc_2m:
+_init.alloc_2m:
 	; align to 2M boundary and step
 	add  r12, not (-1 shl 21)
 	and  r12,     (-1 shl 21)
@@ -248,12 +248,12 @@ exec.alloc_2m:
 	mov  rdx, rax
 	sub  rdx, [bootinfo.phys_base]
 	cmp  rdx, 2 shl 21
-	jb   exec.alloc_2m
+	jb   _init.alloc_2m
 	ret
 .next_region:
 	add  r13, 16
 	mov  r12, [r13]
-	jmp  exec.alloc_2m
+	jmp  _init.alloc_2m
 	
 
 ; enable interrupts and halt forever.
@@ -275,6 +275,7 @@ include "comx.asm"
 include "debug.asm"
 include "idt.asm"
 include "syscall.asm"
+include "paging.asm"
 
 idtr: dw idt.end - idt - 1
       dq idt
@@ -294,6 +295,8 @@ libos.sysconf_base: dq ?
 libos.flags:        dq ?
 debug.tx.head: dd ?
 debug.tx.tail: dd ?
+paging.free_table:   dq ?
+paging.virt_to_phys: dq ?
 rb ((-$) and 63)  ; pad to cache line
 
 syslog.buffer: rb SYSLOG.BUFFER_SIZE
