@@ -19,6 +19,7 @@ paging.map_4k:
 
 ; inputs:   rdi=virtual address, rsi=physical address + proper bits set
 ; outputs:  eax=0 if ok, eax<0 if err
+; preserves: rdi, rsi
 paging.map_2m:
 	push rbp
 	mov  rbp, [paging.virt_to_phys]
@@ -38,11 +39,12 @@ paging.map_2m:
 	cmp  ecx, 18
 	jne  .walk
 .leaf:
+	mov  rdx, rdi
 	sub  rax, rbp
-	shr  rdi, cl
+	shr  rdx, cl
 	and  rax, not 0xfff
-	and  rdi, 511 shl 3
-	mov  [rax + rdi], rsi
+	and  rdx, 511 shl 3
+	mov  [rax + rdx], rsi
 	pop  rbp
 	ret
 .alloc:
