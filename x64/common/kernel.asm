@@ -27,9 +27,9 @@
 ; Most OS-related items are stored in the data area,
 ; but some such as page tables are stored separately.
 ;
-; -- Page tables --
-;
-; range: 0xfffffffe00000000 - 0xfffffffe40000000 (1 GiB)
+; 504: 0xfffffffe00000000 - 0xfffffffe40000000 : page tables
+; 505: 0xfffffffe40000000 - 0xfffffffe80000000 : guard (unmapped)
+; 506: 0xfffffffe80000000 - 0xfffffffec0000000 : PCIe MMCfg
 
 include "kernel.inc"
 include "../util/paging.asm"
@@ -38,23 +38,27 @@ include "../util/registers.asm"
 paging.base      = 0xfffffffe00000000
 paging.base.end  = paging.base + (1 shl 21)
 
+pcie_mmcfg  = 0xfffffffe80000000
+
 init_libos.base  = (1 shl 30) - (1 shl 21)
 
 paging.pml4      = dat.end - 0x1000
 paging.pdp       = dat.end - 0x2000
 paging.pd        = dat.end - 0x3000
+paging.pd_pcie   = dat.end - 0x4000
 paging.pt_mmio   = dat.end - 0x5000
 paging.pd_paging = dat.end - 0x6000
 paging.pml4.pdp     = paging.pml4 + 8*511
 paging.pdp.pd       = paging.pdp  + 8*511
 paging.pdp.pd_paging = paging.pdp + 8*504
+paging.pdp.pd_pcie   = paging.pdp + 8*506
 paging.pd.code      = paging.pd + 8*0
 paging.pd.pt_mmio   = paging.pd + 8*1
 paging.pd.data      = paging.pd + 8*7
 paging.pt_mmio.ioapic = paging.pt_mmio + 8*511
 paging.pt_mmio.lapic  = paging.pt_mmio + 8*509
 
-irp x,pml4,pdp,pd,pd_paging,pt_mmio { paging_phys.#x = (2 shl 21) + (paging.#x - dat.end) }
+irp x,pml4,pdp,pd,pd_paging,pd_pcie,pt_mmio { paging_phys.#x = (2 shl 21) + (paging.#x - dat.end) }
 
 MSR.IA32_EFER = 0xc0000080
 IA32_EFER.SCE = 1 shl  0
@@ -151,6 +155,8 @@ exec:
 	; PDP
 	lea rax, [rbx + paging_phys.pd  + PAGE.A + PAGE.D + PAGE.RW + PAGE.P]
 	mov [paging.pdp.pd], rax
+	lea rax, [rbx + paging_phys.pd_pcie   + PAGE.A + PAGE.D + PAGE.RW + PAGE.P]
+	mov [paging.pdp.pd_pcie  ], rax
 	lea rax, [rbx + paging_phys.pd_paging + PAGE.A + PAGE.D + PAGE.RW + PAGE.P]
 	mov [paging.pdp.pd_paging], rax
 	; PML4
@@ -208,6 +214,15 @@ exec:
 	call lapic.init
 	call comx.init
 	call debug.init
+
+.init_pcie_mmcfg:
+	mov  rax, [bootinfo.pcie]
+	mov  rdi, paging.pd_pcie
+	or   rax, PAGE.P + PAGE.PS + PAGE.RW
+	mov  ecx, 128  ; = 256M / 2M
+@@:	stosq
+	add  rax, 1 shl 21
+	loop @b
 
 .load_libos:
 	; OS code/data

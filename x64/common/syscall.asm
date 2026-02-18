@@ -75,7 +75,6 @@ syscall.table:
 	f 5, eoi
 	f 6, read_debug_message
 	f 7, send_debug_message
-	f 8, map_pcie_config
 SYSCALL.MAX_SYSID = x
 purge f, x
 
@@ -128,27 +127,6 @@ syscall.read_debug_message:
 	ret
 syscall.send_debug_message:
 	ud2
-	ret
-
-; inputs:    rdi=virtual address
-; outputs:   eax=0 if ok, eax<0 if err. edx=number of segments
-syscall.map_pcie_config:
-	test rdi, not (-1 shl 28)
-	jnz  syscall.__panic
-	push r15
-	mov  rsi, [bootinfo.pcie]
-	or   rsi, PAGE.P + PAGE.PS + PAGE.RW + PAGE.US
-	lea  r15, [rdi + (1 shl 28)]
-@@:	call paging.map_2m
-	add  rdi, 1 shl 21
-	add  rsi, 1 shl 21
-	test eax, eax
-	js   .e
-	cmp  rdi, r15
-	jne  @b
-	xor  eax, eax
-.e:	pop  r15
-	mov  edx, 1
 	ret
 
 syscall.__panic:

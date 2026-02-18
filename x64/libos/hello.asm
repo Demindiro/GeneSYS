@@ -7,7 +7,6 @@ SYS.HALT     = 2
 SYS.IDENTIFY = 3
 SYS.SET_CONFIG_SPACE = 4
 SYS.EOI      = 5
-SYS.MAP_PCIE_CONFIG  = 8
 
 INTR.TIMER = 1
 INTR.DEBUG = 31
@@ -37,11 +36,6 @@ start:
 
 	mov eax, SYS.SET_CONFIG_SPACE
 	lea rsi, [sysconf]
-	syscall
-
-	mov eax, SYS.MAP_PCIE_CONFIG
-	mov rdi, PCIE.BASE
-	xor edx, edx
 	syscall
 
 	ud2
