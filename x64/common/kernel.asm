@@ -34,6 +34,7 @@
 ; 506: 0xfffffffe80000000 - 0xfffffffec0000000 : PCIe MMCfg
 
 include "kernel.inc"
+include "../util/amd-iommu.asm"
 include "../util/paging.asm"
 include "../util/pci.asm"
 include "../util/registers.asm"
@@ -74,6 +75,10 @@ IA32_EFER.NXE = 1 shl 11
 LIBOS.FLAGS.INTR_DEBUG_PENDING = 0
 LIBOS.INTR.TIMER =  1
 LIBOS.INTR.DEBUG = 31
+
+virtual at iommu
+	amd_iommu.decl_mmio iommu.amd
+end virtual
 
 use64
 
@@ -284,6 +289,40 @@ exec:
 	mov     rsi, [amd_iommu.pcie_mmcfg.cap]
 	and     rsi, not 0xfff
 	mov     dword [rsi + 4], 2
+
+.amd_iommu_reset:
+	; TODO is there a proper reset option? Is it even necessary?
+	xor     eax, eax
+	;mov     [iommu.amd.control     ], rax
+
+.amd_iommu_init:
+	mov     qword [iommu.amd.device_table], 0
+	mov     rax, (1 shl 21) + (iommu.command_buf - dat) + (8 shl 56)
+	add     rax, [bootinfo.phys_base]
+	mov     [iommu.amd.command_ring], rax
+	add     rax, iommu.event_buf - iommu.command_buf
+	mov     [iommu.amd.event_ring  ], rax
+
+.amd_iommu_enable:
+	mov     [iommu.amd.control], AMD_IOMMU.CONTROL.IOMMU_EN + AMD_IOMMU.CONTROL.EVENT_LOG_EN + AMD_IOMMU.CONTROL.CMD_BUF_EN
+
+.amd_iommu_test:
+	; do a test to check if the IOMMU responds in an expected manner
+	mov     rax, AMD_IOMMU.CMD.COMPLETION_WAIT shl 60
+	mov     [iommu.command_buf + 0], rax
+	xor     eax, eax
+	mov     [iommu.command_buf + 8], rax
+	mov     [iommu.amd.command_tail], 16 * 1
+	mov     rdi, iommu.command_buf
+	; TODO we ought to use a timer
+	; use a very low amount of cycles for now
+	mov     ecx, 1000
+@@:	cmp     [iommu.amd.command_head], 16 * 1
+	je      @f
+	pause
+	loop    @b
+	jmp     panic.amd_iommu_no_response
+@@:
 	ud2
 	jmp     halt
 
@@ -347,6 +386,10 @@ panic.amd_iommu_bad_version:
 	mov  rsi, panic_msg.amd_iommu_bad_version
 	jmp  panic_minimsg
 
+panic.amd_iommu_no_response:
+	mov  rsi, panic_msg.amd_iommu_no_response
+	jmp  panic_minimsg
+
 panic_minimsg:
 	movzx ecx, byte [rsi]
 	inc   rsi
@@ -383,6 +426,7 @@ trace.found_amd_iommu: db 16, "Found AMD IOMMU", 10
 panic_msg.no_iommu: db 16, "No IOMMU found!", 10
 panic_msg.amd_iommu_missing_cap: db 35, "AMD IOMMU missing PCIe capability!", 10
 panic_msg.amd_iommu_bad_version: db 31, "Unsupported AMD IOMMU version!", 10
+panic_msg.amd_iommu_no_response: db 37, "AMD IOMMU does not reply to command!", 10
 
 exec.end = exec + (1 shl 21)
 
@@ -431,5 +475,9 @@ debug.rx.buffer: rb DEBUG.RX.BUFFER_SIZE
 debug.rx.len: dw ?
 debug.rx.cap: dw ?
 debug.rx.prev: db ?
+
+rb ((-$) and 4095)  ; pad to page size
+iommu.command_buf:  rb 4096
+iommu.event_buf:    rb 4096
 
 dat.end = dat + (1 shl 21)

@@ -1,6 +1,9 @@
 #!/bin/sh
+
+QEMU="${QEMU:-qemu-system-x86_64}"
+
 set -xe
-exec qemu-system-x86_64 \
+exec "$QEMU" \
 	-machine q35 \
 	-cpu max \
 	-bios "$UEFI_BIOS" \
