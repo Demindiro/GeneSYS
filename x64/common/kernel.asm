@@ -32,6 +32,12 @@
 ; 504: 0xfffffffe00000000 - 0xfffffffe40000000 : page tables
 ; 505: 0xfffffffe40000000 - 0xfffffffe80000000 : guard (unmapped)
 ; 506: 0xfffffffe80000000 - 0xfffffffec0000000 : PCIe MMCfg
+; 507: 0xfffffffec0000000 - 0xffffffff00000000 : guard (unmapped)
+; 508: 0xffffffff00000000 - 0xffffffff40000000 : guard (unmapped)
+; 509: 0xffffffff40000000 - 0xffffffff80000000 : guard (unmapped)
+; 510: 0xffffffff80000000 - 0xffffffffc0000000 : miscellanous
+;   256: 0xffffffffa0000000 - 0xffffffffa0200000 : AMD-Vi IOMMU device table
+; 511: 0xffffffffc0000000 - 0x0000000000000000 : kernel (see above)
 
 include "kernel.inc"
 include "../util/amd-iommu.asm"
@@ -45,6 +51,7 @@ paging.base.end  = paging.base + (1 shl 21)
 pcie_mmcfg  = 0xfffffffe80000000
 
 iommu = 0xffffffffc0280000
+amd_iommu.device_table = 0xffffffffa0000000
 
 init_libos.base  = (1 shl 30) - (1 shl 21)
 
@@ -54,18 +61,21 @@ paging.pd        = dat.end - 0x3000
 paging.pd_pcie   = dat.end - 0x4000
 paging.pt_mmio   = dat.end - 0x5000
 paging.pd_paging = dat.end - 0x6000
+paging.pd_misc   = dat.end - 0x7000
 paging.pml4.pdp     = paging.pml4 + 8*511
 paging.pdp.pd       = paging.pdp  + 8*511
 paging.pdp.pd_paging = paging.pdp + 8*504
 paging.pdp.pd_pcie   = paging.pdp + 8*506
+paging.pdp.pd_misc   = paging.pdp + 8*510
 paging.pd.code      = paging.pd + 8*0
 paging.pd.pt_mmio   = paging.pd + 8*1
 paging.pd.data      = paging.pd + 8*7
 paging.pt_mmio.ioapic = paging.pt_mmio + 8*511
 paging.pt_mmio.lapic  = paging.pt_mmio + 8*509
 paging.pt_mmio.iommu  = paging.pt_mmio + 8*128
+paging.pd_misc.amd_iommu.device_table = paging.pd_misc + 8*256
 
-irp x,pml4,pdp,pd,pd_paging,pd_pcie,pt_mmio { paging_phys.#x = (2 shl 21) + (paging.#x - dat.end) }
+irp x,pml4,pdp,pd,pd_paging,pd_pcie,pd_misc,pt_mmio { paging_phys.#x = (2 shl 21) + (paging.#x - dat.end) }
 
 MSR.IA32_EFER = 0xc0000080
 IA32_EFER.SCE = 1 shl  0
@@ -170,6 +180,8 @@ exec:
 	mov [paging.pdp.pd_pcie  ], rax
 	lea rax, [rbx + paging_phys.pd_paging + PAGE.A + PAGE.D + PAGE.RW + PAGE.P]
 	mov [paging.pdp.pd_paging], rax
+	lea rax, [rbx + paging_phys.pd_misc   + PAGE.A + PAGE.D + PAGE.RW + PAGE.P]
+	mov [paging.pdp.pd_misc  ], rax
 	; PML4
 	lea rax, [rbx + paging_phys.pdp + PAGE.A + PAGE.D + PAGE.RW + PAGE.P]
 	mov [paging.pml4.pdp], rax
@@ -296,12 +308,20 @@ exec:
 	;mov     [iommu.amd.control     ], rax
 
 .amd_iommu_init:
-	mov     qword [iommu.amd.device_table], 0
+	call    _init.alloc_2m
+	or      rax, PAGE.P + PAGE.PS + PAGE.RW + PAGE.G
+	mov     [paging.pd_misc.amd_iommu.device_table], rax
+	or      rax, 0x1ff  ; maximum size (2MiB / 4KiB - 1 = 511)
+	mov     qword [iommu.amd.device_table], rax
 	mov     rax, (1 shl 21) + (iommu.command_buf - dat) + (8 shl 56)
 	add     rax, [bootinfo.phys_base]
 	mov     [iommu.amd.command_ring], rax
 	add     rax, iommu.event_buf - iommu.command_buf
 	mov     [iommu.amd.event_ring  ], rax
+	mov     rdi, amd_iommu.device_table
+	mov     ecx, (1 shl 21) / 8
+	xor     eax, eax
+	rep stosq
 
 .amd_iommu_enable:
 	mov     [iommu.amd.control], AMD_IOMMU.CONTROL.IOMMU_EN + AMD_IOMMU.CONTROL.EVENT_LOG_EN + AMD_IOMMU.CONTROL.CMD_BUF_EN
@@ -353,6 +373,9 @@ exec:
 	irp x,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 { xorps xmm#x, xmm#x }
 	sysretq
 
+; inputs:    r12, r13
+; outputs:   rax=physical base, r12, r13
+; clobbers:  rdx
 _init.alloc_2m:
 	; align to 2M boundary and step
 	add  r12, not (-1 shl 21)
