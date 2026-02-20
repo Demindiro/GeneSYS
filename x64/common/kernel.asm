@@ -2,7 +2,9 @@
 ; 0: 0xffffffffc0000000 - 0xffffffffc0200000 : code  (RX)
 ;      0xffffffffc01fffe0 - 0xffffffffc0200000 : boot info
 ; 1: 0xffffffffc0200000 - 0xffffffffc0400000 : MMIO
-;      0xffffffffc0200000 - 0xffffffffc03fb000 : guard (unmapped)
+;      0xffffffffc0200000 - 0xffffffffc0280000 : guard (unmapped)
+;      0xffffffffc0280000 - 0xffffffffc0300000 : IOMMU MMIO area
+;      0xffffffffc0300000 - 0xffffffffc03fb000 : guard (unmapped)
 ;      0xffffffffc03fb000 - 0xffffffffc03fc000 : LAPIC
 ;      0xffffffffc03fd000 - 0xffffffffc03fe000 : guard (unmapped)
 ;      0xffffffffc03ff000 - 0xffffffffc0400000 : IOAPIC
@@ -33,12 +35,15 @@
 
 include "kernel.inc"
 include "../util/paging.asm"
+include "../util/pci.asm"
 include "../util/registers.asm"
 
 paging.base      = 0xfffffffe00000000
 paging.base.end  = paging.base + (1 shl 21)
 
 pcie_mmcfg  = 0xfffffffe80000000
+
+iommu = 0xffffffffc0280000
 
 init_libos.base  = (1 shl 30) - (1 shl 21)
 
@@ -57,6 +62,7 @@ paging.pd.pt_mmio   = paging.pd + 8*1
 paging.pd.data      = paging.pd + 8*7
 paging.pt_mmio.ioapic = paging.pt_mmio + 8*511
 paging.pt_mmio.lapic  = paging.pt_mmio + 8*509
+paging.pt_mmio.iommu  = paging.pt_mmio + 8*128
 
 irp x,pml4,pdp,pd,pd_paging,pd_pcie,pt_mmio { paging_phys.#x = (2 shl 21) + (paging.#x - dat.end) }
 
@@ -224,6 +230,64 @@ exec:
 	add  rax, 1 shl 21
 	loop @b
 
+.scan_amd_iommu:
+	mov  rsi, pcie_mmcfg
+	lea  rbx, [rsi + (1 shl 28)]
+@@:	mov  eax, [rsi + PCI.MMCFG.class]
+	shr  eax, 8
+	cmp  eax, 0x080600
+	je   .found_amd_iommu
+	add  rsi, 1 shl 12
+	cmp  rsi, rbx
+	jne  @b
+	jmp panic.no_iommu
+
+.found_amd_iommu:
+	push    rsi
+	mov     rsi, trace.found_amd_iommu
+	call    syslog.push_minimsg
+	pop     rsi
+	mov     eax, [rsi + PCI.MMCFG.cap_ptr]
+	movzx   eax, al
+@@:	test    eax, eax
+	jz      panic.amd_iommu_missing_cap
+	mov     edx, [rsi + rax]
+	cmp     dl, 0xf
+	je      .found_amd_iommu.cap
+	movzx   eax, dh
+	jmp     @b
+
+.found_amd_iommu.cap:
+	shr     edx, 16
+	cmp     dl, 1011b  ; 48882-PUB—Rev 3.10—Feb 2025
+	je      .amd_iommu_supported
+	cmp     dl, 0011b ; ... whatever QEMU is
+	jne     panic.amd_iommu_bad_version
+
+.amd_iommu_supported:
+	add     rsi, rax
+	mov     [amd_iommu.pcie_mmcfg.cap], rsi
+	mov     eax, [rsi + 8]
+	mov     edx, [rsi + 4]
+	shr     rax, 32
+	or      rax, rdx
+	or      edx, 1
+	mov     [rsi + 4], edx
+	and     rax, not 0xfff
+	or      rax, PAGE.P + PAGE.RW
+	mov     ecx, 4  ; TODO check for 16K or 512K
+	mov     rdi, paging.pt_mmio.iommu
+@@:	stosq
+	add     rax, 1 shl 12
+	loop    @b
+	; enable memory space access
+	mov     rsi, [amd_iommu.pcie_mmcfg.cap]
+	and     rsi, not 0xfff
+	mov     dword [rsi + 4], 2
+	ud2
+	jmp     halt
+
+
 .load_libos:
 	; OS code/data
 	call _init.alloc_2m
@@ -269,7 +333,24 @@ _init.alloc_2m:
 	add  r13, 16
 	mov  r12, [r13]
 	jmp  _init.alloc_2m
-	
+
+
+panic.no_iommu:
+	mov  rsi, panic_msg.no_iommu
+	jmp  panic_minimsg
+
+panic.amd_iommu_missing_cap:
+	mov  rsi, panic_msg.amd_iommu_missing_cap
+	jmp  panic_minimsg
+
+panic.amd_iommu_bad_version:
+	mov  rsi, panic_msg.amd_iommu_bad_version
+	jmp  panic_minimsg
+
+panic_minimsg:
+	movzx ecx, byte [rsi]
+	inc   rsi
+	; fallthrough
 
 ; enable interrupts and halt forever.
 ; interrupts need to be enabled so the debug interface works.
@@ -277,9 +358,10 @@ _init.alloc_2m:
 ; inputs: rsi=msg base  rcx=msg len
 panic:
 	call syslog.push
-@@:	sti
+halt:
+	sti
 	hlt
-	jmp @b
+	jmp halt
 
 include "../common/gdt.asm"
 include "../common/crc32c.asm"
@@ -297,8 +379,18 @@ idtr: dw idt.end - idt - 1
 gdtr: dw gdt.end - gdt - 1
       dq gdt
 
+trace.found_amd_iommu: db 16, "Found AMD IOMMU", 10
+panic_msg.no_iommu: db 16, "No IOMMU found!", 10
+panic_msg.amd_iommu_missing_cap: db 35, "AMD IOMMU missing PCIe capability!", 10
+panic_msg.amd_iommu_bad_version: db 31, "Unsupported AMD IOMMU version!", 10
+
 exec.end = exec + (1 shl 21)
 
+
+virtual at _iommu_shared
+	amd_iommu.pcie_mmcfg.cap: dq ?
+	amd_iommu.mmio_base:      dq ?
+end virtual
 
 org 0xffffffffc0e00000
 dat:
@@ -312,6 +404,7 @@ debug.tx.head: dd ?
 debug.tx.tail: dd ?
 paging.free_table:   dq ?
 paging.virt_to_phys: dq ?
+_iommu_shared:  rq 2
 rb ((-$) and 63)  ; pad to cache line
 
 syslog.buffer: rb SYSLOG.BUFFER_SIZE
