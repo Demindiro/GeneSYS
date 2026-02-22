@@ -7,6 +7,10 @@ SYS.HALT     = 2
 SYS.IDENTIFY = 3
 SYS.SET_CONFIG_SPACE = 4
 SYS.EOI      = 5
+SYS.PCI_GET_INFO        = 8
+SYS.PCI_DISABLE_DEVICE  = 9
+SYS.PCI_ENABLE_DEVICE   = 10
+SYS.PCI_MAP_BAR         = 11
 
 INTR.TIMER = 1
 INTR.DEBUG = 31
@@ -37,6 +41,17 @@ start:
 	mov eax, SYS.SET_CONFIG_SPACE
 	lea rsi, [sysconf]
 	syscall
+
+	mov eax, SYS.PCI_GET_INFO
+	mov edx, 16   ; hardcode QEMU e1000e device position
+	syscall
+
+        mov eax, SYS.PCI_MAP_BAR
+        mov edx, 16
+        mov edx, 32 ; virtio-net
+        mov rdi, pci_e1000e_bars
+        mov rsi, pci_e1000e_bars + (1 shl 30)
+        syscall
 
 	ud2
 
@@ -113,3 +128,6 @@ sysconf:
 exc_stack:
 rb ((-$) and 4095)
 .end:
+
+org (1 shl 47)
+pci_e1000e_bars:

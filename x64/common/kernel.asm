@@ -343,8 +343,6 @@ exec:
 	loop    @b
 	jmp     panic.amd_iommu_no_response
 @@:
-	ud2
-	jmp     halt
 
 
 .load_libos:

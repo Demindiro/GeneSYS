@@ -75,6 +75,10 @@ syscall.table:
 	f 5, eoi
 	f 6, read_debug_message
 	f 7, send_debug_message
+	f 8, pci_get_info
+	f 9, pci_disable_device
+	f 10, pci_enable_device
+	f 11, pci_map_bar
 SYSCALL.MAX_SYSID = x
 purge f, x
 
@@ -128,6 +132,110 @@ syscall.read_debug_message:
 syscall.send_debug_message:
 	ud2
 	ret
+
+syscall.pci_get_info:
+	cmp     edx, 1 shl 16
+	jae     .err
+        mov     rdi, pcie_mmcfg
+        shl     edx, 12
+        add     rdi, rdx
+        mov     eax , [rdi + PCI.MMCFG.id   ]
+        mov     edx , [rdi + PCI.MMCFG.class]
+if 0
+        mov     r8d , [rdi + PCI.MMCFG.bar0 ]
+        mov     r9d , [rdi + PCI.MMCFG.bar1 ]
+        mov     r10d, [rdi + PCI.MMCFG.bar2 ]
+        mov     r11d, [rdi + PCI.MMCFG.bar3 ]
+        mov     r12d, [rdi + PCI.MMCFG.bar4 ]
+        mov     r13d, [rdi + PCI.MMCFG.bar5 ]
+end if
+        ret
+.err:	mov     eax, -1
+	ret
+
+syscall.pci_disable_device:
+	ud2
+	ret
+syscall.pci_enable_device:
+	ud2
+	ret
+
+syscall.pci_map_bar:
+        ; ensure segment is valid
+	cmp     edx, 1 shl 16
+	jae     .err
+        mov     rdi, pcie_mmcfg
+        shl     edx, 12
+        add     rdi, rdx
+        ; ensure device is present
+        mov     eax, [rdi + PCI.MMCFG.id]
+        cmp     eax, -1
+        je      .err
+        ; disable MMIO and legacy I/O access as we'll modify the BARs temporarily
+        and     dword [rdi + PCI.MMCFG.cmd], not (PCI.MMCFG.CMD.MMIO + PCI.MMCFG.CMD.LEGACY_IO)
+        mov     ecx, -1
+        ; I'd use irp if it would actually expand bar#n...
+        macro f reg, bar {
+                mov     eax, [rdi + PCI.MMCFG.#bar]
+                mov     [rdi + PCI.MMCFG.#bar], ecx
+                mov     reg, dword [rdi + PCI.MMCFG.#bar]
+                mov     [rdi + PCI.MMCFG.#bar], eax
+        }
+        f r8d , bar0
+        f r9d , bar1
+        f r10d, bar2
+        f r12d, bar3
+        f r13d, bar4
+        f r14d, bar5
+        purge f
+        ; re-enable MMIO access
+        or      dword [rdi + PCI.MMCFG.cmd],     PCI.MMCFG.CMD.MMIO + PCI.MMCFG.CMD.LEGACY_IO
+        ; fold 64-bit BARs and zero out legacy I/O BARs
+        macro f a,b {
+                mov     rax, a
+                mov     rcx, b
+                call    .fold_bars
+                mov     a, rax
+                mov     b, rcx
+        }
+        f r8 ,r9
+        f r9 ,r10
+        f r10,r12
+        f r12,r13
+        f r13,r14
+        purge f
+        ret
+.err:   mov     eax, -1
+        xor     edx, edx
+	ret
+; determine BAR types and sizes
+; - ignore legacy I/O and all-zero BARs
+; - account for 64-bit BARs
+; - immediately fail if type is unrecognized
+;
+; inputs:   eax=current bar, ecx=next bar
+; outputs:  rax=current bar, ecx=next bar (may be zeroed)
+; clobbers: rdx
+syscall.pci_map_bar.fold_bars:
+.err = syscall.pci_map_bar.err
+        ;test    eax, eax   ; redundant with MMIO_32=0 test below
+        ;jz      .skip
+        test    eax, 1     ; check for legacy I/O first, which is just a single bit
+        jnz     .legio
+        mov     edx, eax
+        and     edx, PCI.MMCFG.BAR.TYPE.MMIO.MASK
+        cmp     edx, PCI.MMCFG.BAR.TYPE.MMIO_64
+        je      .comb
+        cmp     edx, PCI.MMCFG.BAR.TYPE.MMIO_32
+        jne     .err       ; unrecognized BAR type
+        ret
+.legio: xor     eax, eax   ; ignore legacy I/O
+        ret
+.comb:  shl     rcx, 32    ; combine with next BAR
+        or      rax, rcx
+        xor     ecx, ecx
+        and     rax, -16   ; for good measure, mask the type as we don't need it here
+        ret
 
 syscall.__panic:
 @@:	hlt
