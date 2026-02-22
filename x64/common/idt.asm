@@ -30,21 +30,22 @@ virtual at (_stack.end - ((5+6)*8))
 end virtual
 
 x = 0
-macro g nr, ist, target {
+macro h nr, ist, dpl, target {
 	assert nr = x
 	x = x + 1
 	dw (target shr  0) and 0xffff, GDT.KERNEL_CS
-	dw 0x8e00 or ist, (target shr 16) and 0xffff
+	dw 0x8e00 or ist or (dpl shl 13), (target shr 16) and 0xffff
 	dd (target shr 32) and 0xffffffff
 	dd 0
 }
+macro g nr, ist, target { h nr, ist, 0, target }
 macro f nr, target { g nr, 0, target }
 align 64
 idt:
 f   0, idt.ex_dt
 f   1, idt.ex_db
 f   2, idt.ex_nmi
-f   3, idt.ex_bp
+h   3, 0, 3, idt.ex_bp
 f   4, idt.ex_of
 f   5, idt.ex_br
 f   6, idt.ex_ud
@@ -85,7 +86,7 @@ f 253, idt.intr_unmapped
 f 254, idt.intr_unmapped
 f 255, idt.intr_unmapped
 .end: assert x = 256
-purge f, g, x
+purge h, f, g, x
 
 
 idt.ex_reserved:

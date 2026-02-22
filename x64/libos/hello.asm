@@ -52,6 +52,7 @@ start:
         mov rdi, pci_e1000e_bars
         mov rsi, pci_e1000e_bars + (1 shl 30)
         syscall
+        int3
 
         mov rdi, pci_e1000e_bars
         mov rax, [rdi]
