@@ -208,13 +208,13 @@ syscall.pci_map_bar:
 .err:   mov     eax, -1
         xor     edx, edx
 	ret
-; determine BAR types and sizes
+; determine MMIO BAR sizes
 ; - ignore legacy I/O and all-zero BARs
 ; - account for 64-bit BARs
 ; - immediately fail if type is unrecognized
 ;
-; inputs:   eax=current bar, ecx=next bar
-; outputs:  rax=current bar, ecx=next bar (may be zeroed)
+; inputs:   eax=current BAR, ecx=next BAR
+; outputs:  rax=BAR size, ecx=next BAR (may be zeroed)
 ; clobbers: rdx
 syscall.pci_map_bar.fold_bars:
 .err = syscall.pci_map_bar.err
@@ -228,6 +228,7 @@ syscall.pci_map_bar.fold_bars:
         je      .comb
         cmp     edx, PCI.MMCFG.BAR.TYPE.MMIO_32
         jne     .err       ; unrecognized BAR type
+        tzcnt   eax, eax
         ret
 .legio: xor     eax, eax   ; ignore legacy I/O
         ret
@@ -235,6 +236,7 @@ syscall.pci_map_bar.fold_bars:
         or      rax, rcx
         xor     ecx, ecx
         and     rax, -16   ; for good measure, mask the type as we don't need it here
+        tzcnt   rax, rax
         ret
 
 syscall.__panic:
