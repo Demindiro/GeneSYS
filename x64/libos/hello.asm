@@ -53,6 +53,16 @@ start:
         mov rsi, pci_e1000e_bars + (1 shl 30)
         syscall
 
+        mov rdi, pci_e1000e_bars
+        mov rax, [rdi]
+        mov rax, 0xdeadcafebabe5
+        mov [rdi], rax
+        mov ecx, 1 shl (12 - 3)
+        rep stosq
+        add rdi, 1 shl 12
+        mov ecx, 1 shl (14 - 3)
+        rep stosq
+
 	ud2
 
 
@@ -129,5 +139,5 @@ exc_stack:
 rb ((-$) and 4095)
 .end:
 
-org (1 shl 47)
+org (1 shl 40)
 pci_e1000e_bars:
