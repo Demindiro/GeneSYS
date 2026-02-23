@@ -12,16 +12,44 @@ SYS.PCI_DISABLE_DEVICE  = 9
 SYS.PCI_ENABLE_DEVICE   = 10
 SYS.PCI_MAP_BAR         = 11
 
+DEV.EDU.STATUS.FACT_FIN   = 1 shl 0
+DEV.EDU.STATUS.FACT_INTR  = 1 shl 7
+DEV.EDU.DMA.INTERNAL_ADDR = 0x40000
+DEV.EDU.DMA.START         = 1 shl 0
+DEV.EDU.DMA.DIR           = 1 shl 1
+DEV.EDU.DMA.INTR          = 1 shl 2
+
+virtual at 0
+        dev.edu::
+                .id             dd ?
+                .check          dd ?
+                .fact           dd ?
+                rb 0x20 - $
+                .status         dd ?
+                .intr.status    dd ?
+                rb 0x60 - $
+                .intr.raise     dd ?
+                .intr.ack       dd ?
+                rb 0x80 - $
+                .dma.src        dq ?
+                .dma.dst        dq ?
+                .dma.len        dq ?
+                .dma.cmd        dd ?
+end virtual
+
 INTR.TIMER = 1
 INTR.DEBUG = 31
 
 PCIE.BASE = 1 shl 40
 
-macro trace msg {
+macro syslog {
 	mov eax, SYS.LOG
+	syscall
+}
+macro trace msg {
 	lea rsi, [msg]
 	mov edx, msg#.end - msg
-	syscall
+        syslog
 }
 
 start:
@@ -42,27 +70,60 @@ start:
 	lea rsi, [sysconf]
 	syscall
 
-	mov eax, SYS.PCI_GET_INFO
-	mov edx, 16   ; hardcode QEMU e1000e device position
-	syscall
-
-        mov eax, SYS.PCI_MAP_BAR
-        mov edx, 16
-        mov edx, 32 ; virtio-net
-        mov rdi, pci_e1000e_bars
-        mov rsi, pci_e1000e_bars + (1 shl 30)
+        mov     r15, -1
+@@:     inc     r15
+        cmp     r15, 1 shl 16
+        je      panic.no_edu_dev
+        mov     rdx, r15
+	mov     eax, SYS.PCI_GET_INFO
         syscall
-        int3
+        cmp     eax, 0x11e8_1234
+        jne     @b
 
-        mov rdi, pci_e1000e_bars
-        mov rax, [rdi]
-        mov rax, 0xdeadcafebabe5
-        mov [rdi], rax
-        mov ecx, 1 shl (12 - 3)
-        rep stosq
-        add rdi, 1 shl 12
-        mov ecx, 1 shl (14 - 3)
-        rep stosq
+        mov     esp, stck.end
+        mov     rdi, buf + 4
+        mov     dword [rdi - 4], "ID: "
+        push    rax
+        mov     edx, eax
+        mov     ecx, 4
+        call    fmt.num_to_hex_fixed
+        pop     rdx
+        mov     al, ':'
+        stosb
+        shr     edx, 16
+        mov     ecx, 4
+        call    fmt.num_to_hex_fixed
+        mov     rsi, buf
+        mov     edx, edi
+        sub     edx, esi
+        syslog
+
+        ; map edu device MMIO
+        mov     eax, SYS.PCI_MAP_BAR
+        mov     rdx, r15
+        mov     rdi, pci_dev_bars
+        mov     rsi, pci_dev_bars + (1 shl 30)
+        syscall
+        ; mask out log2(size)
+        mov     rdi, r8
+        and     rdi, -128
+        ; test bitwise NOT
+        mov     dword [rdi + dev.edu.check], not 0xdead1337
+        cmp     dword [rdi + dev.edu.check],     0xdead1337
+        jne     panic.edu_dev_malfunction
+        ; test factorial
+        mov     dword [rdi + dev.edu.fact], 7
+@@:     test    dword [rdi + dev.edu.status], DEV.EDU.STATUS.FACT_FIN
+        jnz     @b
+        cmp     dword [rdi + dev.edu.fact], 5040
+        jne     panic.edu_dev_malfunction
+        ; test DMA
+        mov     qword [rdi + dev.edu.dma.src], 0x40000
+        mov     qword [rdi + dev.edu.dma.dst], buf
+        mov     qword [rdi + dev.edu.dma.len], 0x12345
+        mov     dword [rdi + dev.edu.dma.cmd], DEV.EDU.DMA.START
+
+        trace   msg_edu_dev_ok
 
 	ud2
 
@@ -108,6 +169,31 @@ halt:
 	syscall
 	jmp halt
 
+
+; inputs:       rdi=destination,rdx=number,ecx=digits
+; outputs:      rdi=destination end
+; clobbers:     eax, ecx, rsi
+fmt.num_to_hex_fixed:
+        jrcxz   .end
+        lea     rsi, [rdi + rcx]
+@@:     mov     eax, edx
+        and     eax, 15
+        mov     al, [fmt.hex_table + rax]
+        shr     edx, 4
+        mov     [rdi + rcx - 1], al
+        loop    @b
+        mov     rdi, rsi
+.end:   ret
+
+
+panic.no_edu_dev:
+        trace   msg_no_edu_dev
+        jmp     halt
+panic.edu_dev_malfunction:
+        trace   msg_edu_dev_malfunction
+        jmp     halt
+
+
 msg_hello: db "Hello world!", 10
 .end:
 msg_identified: db "GeneSYS identified", 10
@@ -115,6 +201,12 @@ msg_identified: db "GeneSYS identified", 10
 msg_interrupt: db "Received unknown interrupt", 10
 .end:
 msg_interrupt_debug_message: db "Received debug message", 10
+.end:
+msg_no_edu_dev: db "No edu device found (1234:11e3). Please add -device edu to the QEMU command line.", 10
+.end:
+msg_edu_dev_malfunction: db "edu device does not behave as expected", 10
+.end:
+msg_edu_dev_ok: db "edu works OK!", 10
 .end:
 
 err_div:   db "error: divide by zero"
@@ -124,6 +216,8 @@ err_badop: db "error: bad opcode exception"
 
 err_bad_kernel_identification.msg: db "error: kernel identification failed", 10
 .end:
+
+fmt.hex_table  db "0123456789abcdef"
 
 rb ((-$) and 63)
 sysconf:
@@ -140,5 +234,10 @@ exc_stack:
 rb ((-$) and 4095)
 .end:
 
+stck:   rb 96
+.end:
+buf:    rb 4000
+.end:
+
 org (1 shl 40)
-pci_e1000e_bars:
+pci_dev_bars:
