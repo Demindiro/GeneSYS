@@ -53,6 +53,7 @@ macro trace msg {
 }
 
 start:
+        mov     esp, stck.end
 	trace msg_hello
 
 .identify_kernel:
@@ -70,6 +71,7 @@ start:
 	lea rsi, [sysconf]
 	syscall
 
+        ; find edu device
         mov     r15, -1
 @@:     inc     r15
         cmp     r15, 1 shl 16
@@ -80,9 +82,8 @@ start:
         cmp     eax, 0x11e8_1234
         jne     @b
 
-        mov     esp, stck.end
-        mov     rdi, buf + 4
-        mov     dword [rdi - 4], "ID: "
+        ; log ID and segment
+        mov     rdi, buf
         push    rax
         mov     edx, eax
         mov     ecx, 4
@@ -93,6 +94,27 @@ start:
         shr     edx, 16
         mov     ecx, 4
         call    fmt.num_to_hex_fixed
+        mov     dword [rdi], " @ "
+        add     rdi, 3
+        mov     rdx, r15
+        shr     edx, 8
+        mov     ecx, 2
+        call    fmt.num_to_hex_fixed
+        mov     al, ':'
+        stosb
+        mov     rdx, r15
+        shr     edx, 3
+        and     edx, 31
+        mov     ecx, 2
+        call    fmt.num_to_hex_fixed
+        mov     al, '.'
+        stosb
+        mov     rax, r15
+        and     eax, 7
+        mov     al, [fmt.hex_table + rax]
+        stosb
+        mov     al, 10
+        stosb
         mov     rsi, buf
         mov     edx, edi
         sub     edx, esi
@@ -110,18 +132,41 @@ start:
         ; test bitwise NOT
         mov     dword [rdi + dev.edu.check], not 0xdead1337
         cmp     dword [rdi + dev.edu.check],     0xdead1337
-        jne     panic.edu_dev_malfunction
+        jne     panic.edu_dev_bad_check
         ; test factorial
         mov     dword [rdi + dev.edu.fact], 7
 @@:     test    dword [rdi + dev.edu.status], DEV.EDU.STATUS.FACT_FIN
         jnz     @b
         cmp     dword [rdi + dev.edu.fact], 5040
-        jne     panic.edu_dev_malfunction
+        jne     panic.edu_dev_bad_factorial
+
+        ; enable edu device "bus mastering" / RAM access
+        mov     eax, SYS.PCI_ENABLE_DEVICE
+        mov     rdx, r15
+        syscall
+
         ; test DMA
+        mov     rax, "Behold!"
+        mov     [buf], rax
+        mov     qword [rdi + dev.edu.dma.src], buf
+        mov     qword [rdi + dev.edu.dma.dst], 0x40000
+        mov     qword [rdi + dev.edu.dma.len], 8
+        mov     dword [rdi + dev.edu.dma.cmd], DEV.EDU.DMA.START
+        mov ecx, 1 shl 24
+        @@: loop @b
+@@:     test    dword [rdi + dev.edu.dma.cmd], DEV.EDU.DMA.START
+        jnz     @b
+        mov     qword [buf], 0
         mov     qword [rdi + dev.edu.dma.src], 0x40000
         mov     qword [rdi + dev.edu.dma.dst], buf
-        mov     qword [rdi + dev.edu.dma.len], 0x12345
-        mov     dword [rdi + dev.edu.dma.cmd], DEV.EDU.DMA.START
+        mov     qword [rdi + dev.edu.dma.len], 8
+        mov     dword [rdi + dev.edu.dma.cmd], DEV.EDU.DMA.START + DEV.EDU.DMA.DIR
+        mov ecx, 1 shl 24
+        @@: loop @b
+@@:     test    dword [rdi + dev.edu.dma.cmd], DEV.EDU.DMA.START
+        jnz     @b
+        cmp     [buf], rax
+        jne     panic.edu_dev_bad_dma
 
         trace   msg_edu_dev_ok
 
@@ -189,8 +234,14 @@ fmt.num_to_hex_fixed:
 panic.no_edu_dev:
         trace   msg_no_edu_dev
         jmp     halt
-panic.edu_dev_malfunction:
-        trace   msg_edu_dev_malfunction
+panic.edu_dev_bad_check:
+        trace   msg_edu_dev_bad_check
+        jmp     halt
+panic.edu_dev_bad_factorial:
+        trace   msg_edu_dev_bad_factorial
+        jmp     halt
+panic.edu_dev_bad_dma:
+        trace   msg_edu_dev_bad_dma
         jmp     halt
 
 
@@ -204,7 +255,11 @@ msg_interrupt_debug_message: db "Received debug message", 10
 .end:
 msg_no_edu_dev: db "No edu device found (1234:11e3). Please add -device edu to the QEMU command line.", 10
 .end:
-msg_edu_dev_malfunction: db "edu device does not behave as expected", 10
+msg_edu_dev_bad_check: db "edu check gave wrong result", 10
+.end:
+msg_edu_dev_bad_factorial: db "edu factorial gave wrong result", 10
+.end:
+msg_edu_dev_bad_dma: db "edu DMA failed", 10
 .end:
 msg_edu_dev_ok: db "edu works OK!", 10
 .end:

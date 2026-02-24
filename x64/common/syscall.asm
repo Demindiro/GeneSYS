@@ -154,11 +154,32 @@ end if
 	ret
 
 syscall.pci_disable_device:
-	ud2
+	cmp     edx, 1 shl 16
+	jae     .inval
+        mov     rdi, pcie_mmcfg
+        shl     edx, 12
+        add     rdi, rdx
+        mov     [rdi + PCI.MMCFG.cmd], PCI.MMCFG.CMD.MMIO + PCI.MMCFG.CMD.LEGACY_IO
 	ret
+.inval: ud2
+
 syscall.pci_enable_device:
-	ud2
+	cmp     edx, 1 shl 16
+	jae     .inval
+        ; first, configure IOMMU
+        mov     rsi, cr3
+        and     rsi, -4096
+        push    rdx
+        call    iommu.enable_device
+        pop     rdx
+        ; only then enable bus mastering
+        mov     rdi, pcie_mmcfg
+        shl     edx, 12
+        add     rdi, rdx
+        mov     [rdi + PCI.MMCFG.cmd], PCI.MMCFG.CMD.BUS_MASTER + PCI.MMCFG.CMD.MMIO + PCI.MMCFG.CMD.LEGACY_IO
 	ret
+        ; stop immediately if the OS is naughty
+.inval: ud2
 
 syscall.pci_map_bar:
         push    rbp

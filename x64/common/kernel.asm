@@ -323,6 +323,15 @@ exec:
 	xor     eax, eax
 	rep stosq
 
+        ; force all transactions to go through the IOMMU by default
+        ; TODO we should also issue INVALIDATE_DEVTAB
+        mov     rdi, amd_iommu.device_table
+        mov     rsi, amd_iommu.device_table + (1 shl 21)
+@@:     mov     byte [rdi], AMD_IOMMU.DTE.0.V
+        add     rdi, 32
+        cmp     rdi, rsi
+        jne     @b
+
 .amd_iommu_enable:
 	mov     [iommu.amd.control], AMD_IOMMU.CONTROL.IOMMU_EN + AMD_IOMMU.CONTROL.EVENT_LOG_EN + AMD_IOMMU.CONTROL.CMD_BUF_EN
 
@@ -349,7 +358,8 @@ exec:
 	; OS code/data
 	call _init.alloc_2m
 	mov  rdi, init_libos.base
-	lea  rsi, [rax + PAGE.P + PAGE.PS + PAGE.RW + PAGE.US]
+        mov     rsi, PAGE.P + PAGE.PS + PAGE.RW + PAGE.US + AMD_IOMMU.PTE.NEXTLVL.0 + AMD_IOMMU.PTE.IR + AMD_IOMMU.PTE.IW
+        or      rsi, rax
 	call paging.map_2m
 	; copy OS code
 	mov rsi, [bootinfo.libos.start]
@@ -437,6 +447,7 @@ include "debug.asm"
 include "idt.asm"
 include "syscall.asm"
 include "paging.asm"
+include "iommu.asm"
 
 idtr: dw idt.end - idt - 1
       dq idt

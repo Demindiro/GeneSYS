@@ -1,3 +1,11 @@
+macro _paging.mask_pte_addr reg {
+        ; clear [11:0] and sign-extend [64:52]
+        ; don't forget to clear the high bits... (XD, AMD_IOMMU.PTE.{IR,IW})
+        shl     reg, 64 - 52
+        sar     reg, 64 - 52 + 12
+        shl     reg, 12
+}
+
 paging.init:
 	; first table is guaranteed to be valid
 	mov  rax, [paging.free_table]
@@ -39,7 +47,7 @@ _paging.map_page:
 	mov  ecx, 9*4
 .walk:
 	mov  rdx, rdi
-	and  rax, not 0xfff
+        _paging.mask_pte_addr   rax
 	shr  rdx, cl
 	sub  rax, rbp
 	and  rdx, 511 shl 3
@@ -52,14 +60,17 @@ _paging.map_page:
 	jne  .walk
 .leaf:
 	mov  rdx, rdi
+        ;int3
+        ;hlt
 	sub  rax, rbp
 	shr  rdx, cl
-	and  rax, not 0xfff
+        _paging.mask_pte_addr   rax
 	and  rdx, 511 shl 3
 	mov  [rax + rdx], rsi
 	pop  rbp
 	ret
 .alloc:
+        ; allocate page
 	mov  rax, [paging.free_table]
 	test rax, rax
 	jz   .fail
@@ -68,10 +79,20 @@ _paging.map_page:
 	mov  [paging.free_table], rbx
 	xor  ebx, ebx
 	mov  [rax], rbx
-        pop     rbx
+        ; translate virt->phys
 	add  rax, rbp
-	or   rax, PAGE.P + PAGE.RW + PAGE.US
+        ; set bits
+        mov     rbx, PAGE.P + PAGE.RW + PAGE.US + AMD_IOMMU.PTE.IR + AMD_IOMMU.PTE.IW
+        or      rax, rbx
+        ; set NextLevel bits for IOMMU
+        mov     ebx, ecx
+        imul    ebx, ((1 shl 24) / 9)
+        shr     ebx, 24
+        shl     ebx, AMD_IOMMU.PTE.NEXTLVL_SHIFT
+        or      rax, rbx
+        ; put entry
 	mov  [rdx], rax
+        pop     rbx
 	jmp  .n
 .fail:
 	pop  rbp
