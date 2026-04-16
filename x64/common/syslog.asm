@@ -1,5 +1,13 @@
 SYSLOG.BUFFER_SIZE = 1 shl 17
 
+; inputs:    rsi = string with length prefixed as a single byte
+; outputs:   rax = bytes written
+; clobbers:  rcx,rdx,rbx,rsi,rdi
+syslog.push_minimsg:
+	movzx ecx, byte [rsi]
+	inc   rsi
+	; fallthrough
+
 ; rsi: message address
 ; rcx: message length
 ;

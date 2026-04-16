@@ -1,0 +1,11 @@
+[*.asm]
+charset = utf-8
+syntax = asm-x86
+indent_style = space
+indent_size  = 8
+
+[*.inc]
+charset = utf-8
+syntax = asm-x86
+indent_style = space
+indent_size  = 8

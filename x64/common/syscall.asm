@@ -75,6 +75,10 @@ syscall.table:
 	f 5, eoi
 	f 6, read_debug_message
 	f 7, send_debug_message
+	f 8, pci_get_info
+	f 9, pci_disable_device
+	f 10, pci_enable_device
+	f 11, pci_map_bar
 SYSCALL.MAX_SYSID = x
 purge f, x
 
@@ -128,6 +132,178 @@ syscall.read_debug_message:
 syscall.send_debug_message:
 	ud2
 	ret
+
+syscall.pci_get_info:
+	cmp     edx, 1 shl 16
+	jae     .err
+        mov     rdi, pcie_mmcfg
+        shl     edx, 12
+        add     rdi, rdx
+        mov     eax , [rdi + PCI.MMCFG.id   ]
+        mov     edx , [rdi + PCI.MMCFG.class]
+if 0
+        mov     r8d , [rdi + PCI.MMCFG.bar0 ]
+        mov     r9d , [rdi + PCI.MMCFG.bar1 ]
+        mov     r10d, [rdi + PCI.MMCFG.bar2 ]
+        mov     r11d, [rdi + PCI.MMCFG.bar3 ]
+        mov     r12d, [rdi + PCI.MMCFG.bar4 ]
+        mov     r13d, [rdi + PCI.MMCFG.bar5 ]
+end if
+        ret
+.err:	mov     eax, -1
+	ret
+
+syscall.pci_disable_device:
+	cmp     edx, 1 shl 16
+	jae     .inval
+        mov     rdi, pcie_mmcfg
+        shl     edx, 12
+        add     rdi, rdx
+        mov     [rdi + PCI.MMCFG.cmd], PCI.MMCFG.CMD.MMIO + PCI.MMCFG.CMD.LEGACY_IO
+	ret
+.inval: ud2
+
+syscall.pci_enable_device:
+	cmp     edx, 1 shl 16
+	jae     .inval
+        ; first, configure IOMMU
+        mov     rsi, cr3
+        and     rsi, -4096
+        push    rdx
+        call    iommu.enable_device
+        pop     rdx
+        ; only then enable bus mastering
+        mov     rdi, pcie_mmcfg
+        shl     edx, 12
+        add     rdi, rdx
+        mov     [rdi + PCI.MMCFG.cmd], PCI.MMCFG.CMD.BUS_MASTER + PCI.MMCFG.CMD.MMIO + PCI.MMCFG.CMD.LEGACY_IO
+	ret
+        ; stop immediately if the OS is naughty
+.inval: ud2
+
+syscall.pci_map_bar:
+        push    rbp
+        ; ensure segment is valid
+	cmp     edx, 1 shl 16
+	jae     .err
+        mov     rbp, pcie_mmcfg
+        shl     edx, 12
+        add     rbp, rdx
+        ; ensure device is present
+        mov     eax, [rbp + PCI.MMCFG.id]
+        cmp     eax, -1
+        je      .err
+        ; disable MMIO and legacy I/O access as we'll modify the BARs temporarily
+        and     dword [rbp + PCI.MMCFG.cmd], not (PCI.MMCFG.CMD.MMIO + PCI.MMCFG.CMD.LEGACY_IO)
+        mov     ecx, -1
+        ; I'd use irp if it would actually expand bar#n...
+        macro f reg, bar {
+                mov     eax, [rbp + PCI.MMCFG.#bar]
+                mov     [rbp + PCI.MMCFG.#bar], ecx
+                mov     reg, dword [rbp + PCI.MMCFG.#bar]
+                mov     [rbp + PCI.MMCFG.#bar], eax
+        }
+        f r8d , bar0
+        f r9d , bar1
+        f r10d, bar2
+        f r12d, bar3
+        f r13d, bar4
+        f r14d, bar5
+        purge f
+        ; re-enable MMIO access
+        or      dword [rbp + PCI.MMCFG.cmd],     PCI.MMCFG.CMD.MMIO + PCI.MMCFG.CMD.LEGACY_IO
+        ; fold 64-bit BARs and zero out legacy I/O BARs
+        macro f a,b {
+                mov     rax, a
+                mov     rcx, b
+                call    .fold_bars
+                mov     a, rax
+                mov     b, rcx
+        }
+        f r8 ,r9
+        f r9 ,r10
+        f r10,r12
+        f r12,r13
+        f r13,r14
+        purge f
+        ; map BARs
+        push r11
+        macro f reg, bar {
+                test    reg, reg
+                jz      @f
+                if bar = 0
+                        xor     edx, edx
+                else
+                        mov     edx, bar
+                end if
+                mov     rcx, reg
+                or      reg, rdi
+                call    .map_bar
+        @@:
+        }
+        f r8 , 0
+        f r9 , 1
+        f r10, 2
+        f r12, 3
+        f r13, 4
+        f r14, 5
+        purge f
+        pop     r11
+        pop     rbp
+        ret
+.err:   mov     eax, -1
+        xor     edx, edx
+        pop     rbp
+	ret
+; determine MMIO BAR sizes
+; - ignore legacy I/O and all-zero BARs
+; - account for 64-bit BARs
+; - immediately fail if type is unrecognized
+;
+; inputs:   eax=current BAR, ecx=next BAR
+; outputs:  rax=BAR size, ecx=next BAR (may be zeroed)
+; clobbers: rdx
+syscall.pci_map_bar.fold_bars:
+        test    eax, eax   ; ignore unmapped BARs
+        jz      .skip
+        test    eax, 1     ; check for legacy I/O first, which is just a single bit
+        jnz     .legio
+        mov     edx, eax
+        and     edx, PCI.MMCFG.BAR.TYPE.MMIO.MASK
+        cmp     edx, PCI.MMCFG.BAR.TYPE.MMIO_64
+        je      .comb
+        cmp     edx, PCI.MMCFG.BAR.TYPE.MMIO_32
+        jne     .err       ; unrecognized BAR type
+        bsf     eax, eax
+.skip:  ret
+.legio: xor     eax, eax   ; ignore legacy I/O
+        ret
+.comb:  shl     rcx, 32    ; combine with next BAR
+        or      rax, rcx
+        xor     ecx, ecx
+        and     rax, -16   ; for good measure, mask the type as we don't need it here
+        bsf     rax, rax
+        ret
+.err:   ud2     ; TODO
+; inputs:       rdi=virtual base, rcx=BAR size, rdx=BAR index
+; outputs:      rcx
+; clobbers:     rax, rcx, rdx, rbx, rdi, rsi, r11
+syscall.pci_map_bar.map_bar:
+        mov     esi, [rbp + PCI.MMCFG.bar0 + rdx*4]
+        mov     ebx, esi
+        and     esi, -16
+        and     ebx, 7
+        cmp     ebx, PCI.MMCFG.BAR.TYPE.MMIO_64
+        jne     @f
+        mov     edx, [rbp + PCI.MMCFG.bar0 + rdx*4 + 4]
+        shl     rdx, 32
+        or      rsi, rdx
+@@:     mov     r11, 1
+        shl     r11, cl
+        add     r11, rdi
+        call    paging.map_range
+        add     rdi, 1 shl 12 ; TODO alignment?
+        ret
 
 syscall.__panic:
 @@:	hlt
