@@ -30,6 +30,6 @@ w
 CMD
 fdisk -l $gpt
 
-dd if=$fat of=$gpt bs=512 oseek=34 conv=notrunc
+dd if=$fat of=$gpt bs=512 seek=34 conv=notrunc
 
 fdisk -l $gpt
