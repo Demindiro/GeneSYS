@@ -1,5 +1,5 @@
 x64-libos: build/libos/
-	O=$(PWD)/build/libos make -C x64/libos
+	out=$(PWD)/build/libos sh x64/libos/build.sh
 
 x64-uefi:
 	sh build.sh uefi
