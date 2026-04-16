@@ -1,6 +1,7 @@
 #!/bin/sh
 
 QEMU="${QEMU:-qemu-system-x86_64}"
+ROOT="${ROOT:-build/uefi/root.img}"
 
 set -xe
 exec $QEMUWRAP "$QEMU" \
@@ -9,6 +10,6 @@ exec $QEMUWRAP "$QEMU" \
 	-bios "$UEFI_BIOS" \
 	-device amd-iommu,device-iotlb=on,dma-remap=on,dma-translation=on \
 	-device edu,dma_mask=0xffffffffffffffff \
-	-drive file=build/uefi/root.img,if=virtio,format=raw \
+	-drive file="$ROOT",if=virtio,format=raw \
 	-serial unix:/tmp/genesys.unix \
 	"$@"

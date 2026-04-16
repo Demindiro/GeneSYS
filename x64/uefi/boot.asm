@@ -1,4 +1,4 @@
-include "../../x64-config.inc"
+include "../config.inc"
 
 use64
 
@@ -633,8 +633,7 @@ include "../util/registers.asm"
 
 include "../common/kernel.inc"
 align 64
-; TODO avoid hardcoded path
-kernel: file "../../build/uefi/kernel.bin"
+kernel: file '%out%/kernel.bin'
 ; to simplify things, include libos along with the kernel :)
 times ((-$) and 63) int3   ; int3 as guard + align for faster memcpy on boot
 .libos: file CONFIG.LIBOS.PATH
