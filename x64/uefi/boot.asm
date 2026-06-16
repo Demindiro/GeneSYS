@@ -185,9 +185,8 @@ efi_invalid_parameter = (1 shl 63) or 2
 efi_buffer_too_small  = (1 shl 63) or 5
 efi_out_of_resources  = (1 shl 63) or 9
 
-
-virtual at 0
-	XSDT:
+macro define_acpi_table name {
+        name::
 		.signature:       rb 4
 		.length:          dd ?
 		.revision:        db ?
@@ -197,20 +196,15 @@ virtual at 0
 		.oemrevision:     dd ?
 		.creatorid:       dd ?
 		.creatorrevision: dd ?
+}
+
+virtual at 0
+        define_acpi_table XSDT
 		.sizeof:
 end virtual
 
 virtual at 0
-	MCFG:
-		.signature:       rb 4
-		.length:          dd ?
-		.revision:        db ?
-		.checksum:        db ?
-		.oemid:           rb 6
-		.oemtableid:      rb 8
-		.oemrevision:     dd ?
-		.creatorid:       dd ?
-		.creatorrevision: dd ?
+        define_acpi_table MCFG
 		                  rb 8  ; reserved
 		.sizeof:
 end virtual
