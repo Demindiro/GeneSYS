@@ -198,6 +198,31 @@ macro define_acpi_table name {
 		.creatorrevision: dd ?
 }
 
+
+virtual at 0
+        define_acpi_table DMAR
+                .host_address_width     db ?
+                .flags                  db ?
+                                        rb 10  ; reserved
+		.sizeof:
+end virtual
+assert DMAR.sizeof = 48
+
+virtual at 0
+        DMAR.REMAPPING_STRUCTURE::
+                .type           dw ?
+                .length         dw ?
+end virtual
+
+DMAR.REMAPPING_STRUCTURE.TYPE.DRHD = 0
+DMAR.REMAPPING_STRUCTURE.TYPE.RMRR = 1
+DMAR.REMAPPING_STRUCTURE.TYPE.ATSR = 2
+DMAR.REMAPPING_STRUCTURE.TYPE.RHSA = 3
+DMAR.REMAPPING_STRUCTURE.TYPE.ANDD = 4
+DMAR.REMAPPING_STRUCTURE.TYPE.SOTC = 5
+DMAR.REMAPPING_STRUCTURE.TYPE.SIDP = 6
+
+
 virtual at 0
         define_acpi_table XSDT
 		.sizeof:
