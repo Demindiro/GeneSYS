@@ -41,6 +41,7 @@
 
 include "kernel.inc"
 include "../util/amd-iommu.asm"
+include "../util/intel-iommu.asm"
 include "../util/paging.asm"
 include "../util/pci.asm"
 include "../util/registers.asm"
@@ -52,6 +53,7 @@ pcie_mmcfg  = 0xfffffffe80000000
 
 iommu = 0xffffffffc0280000
 amd_iommu.device_table = 0xffffffffa0000000
+intel_iommu.translation_structures = 0xffffffffa0000000
 
 init_libos.base  = (1 shl 30) - (1 shl 21)
 
@@ -74,6 +76,7 @@ paging.pt_mmio.ioapic = paging.pt_mmio + 8*511
 paging.pt_mmio.lapic  = paging.pt_mmio + 8*509
 paging.pt_mmio.iommu  = paging.pt_mmio + 8*128
 paging.pd_misc.amd_iommu.device_table = paging.pd_misc + 8*256
+paging.pd_misc.intel_iommu.translation_structures = paging.pd_misc + 8*256
 
 irp x,pml4,pdp,pd,pd_paging,pd_pcie,pd_misc,pt_mmio { paging_phys.#x = (2 shl 21) + (paging.#x - dat.end) }
 
@@ -89,6 +92,27 @@ LIBOS.INTR.DEBUG = 31
 virtual at iommu
 	amd_iommu.decl_mmio iommu.amd
 end virtual
+
+virtual at iommu
+        intel_iommu.decl_mmio iommu.intel
+end virtual
+
+virtual at intel_iommu.translation_structures
+        intel_iommu:
+                .root_address_table     rq 2*256
+                .context_table_0        rq 4*256
+                ; Notes
+                ; - We don't support request-with-PASID (PASID in TLP)
+                ; - We do need at least one directory entry for each device
+                ; - 2^(x+7) => at least 128 entries.
+                ;   Note that each leaf has exactly 64 entries, so at least 2 leaves
+                .pasid_table_0          rq 8*64*2
+                ; at least 2 tables
+                .pasid_directory_0      rq 2
+                .sizeof = $ - intel_iommu
+        assert intel_iommu.sizeof <= (1 shl 21)
+end virtual
+
 
 use64
 
@@ -119,7 +143,7 @@ virtual at (exec.end - BOOTINFO.sizeof)
 	; the end (excl) address of the initial libos
 	.libos.end:   dq ?
 	; list of PCIe root bases
-	.pcie:        rb (PCIE.MAX_ROOTS * 16)
+	.pcie:        rb (PCIE.MAX_ROOTS * PCIE_SEGMENT.sizeof)
 end virtual
 exec:
 	; clear data region
@@ -239,13 +263,21 @@ exec:
 	call debug.init
 
 .init_pcie_mmcfg:
-	mov  rax, [bootinfo.pcie]
+	mov  rax, [bootinfo.pcie + PCIE_SEGMENT.start_addr]
 	mov  rdi, paging.pd_pcie
 	or   rax, PAGE.P + PAGE.PS + PAGE.RW
 	mov  ecx, 128  ; = 256M / 2M
 @@:	stosq
 	add  rax, 1 shl 21
 	loop @b
+
+        mov     rsi, [bootinfo.pcie + PCIE_SEGMENT.intel_iommu_base]
+        test    rsi, rsi
+        jnz     .found_intel_iommu
+        ; fallthrough to .scan_amd_iommu
+
+
+
 
 .scan_amd_iommu:
 	mov  rsi, pcie_mmcfg
@@ -352,6 +384,53 @@ exec:
 	loop    @b
 	jmp     panic.amd_iommu_no_response
 @@:
+        jmp .load_libos
+
+
+
+
+
+        ; rsi: IOMMU registers base address
+.found_intel_iommu:
+        ; map IOMMU registers
+	mov     rdi, paging.pt_mmio.iommu
+        or      rsi, PAGE.P + PAGE.RW + PAGE.G
+	mov     [rdi], rsi
+        ; check version (TODO actually check)
+        mov     eax, [iommu.intel.version]
+        ; allocate space for translation structures
+	call    _init.alloc_2m
+        push    rax     ; <0>
+	or      rax, PAGE.P + PAGE.PS + PAGE.RW + PAGE.G
+	mov     [paging.pd_misc.intel_iommu.translation_structures], rax
+        ; zero out translation structures
+        mov     ecx, (1 shl 21) / 8
+        mov     rdi, intel_iommu.translation_structures
+        xor     eax, eax
+        rep stosq
+        ; set root table in scalable mode
+        pop     rax     ; <0>
+        mov     rdx, rax
+        or      rax, (1 shl 10)
+        mov     [iommu.intel.root_table_addr], rax
+        ; link context table for bus 0
+        lea     rax, [rdx + (intel_iommu.context_table_0 - intel_iommu) + 1]
+        mov     [intel_iommu.root_address_table + (8*0)], rax
+        add     rax, 4096
+        mov     [intel_iommu.root_address_table + (8*1)], rax
+        ; link PASID tables
+        lea     rax, [rdx + (intel_iommu.pasid_table_0 - intel_iommu) + 1]
+        int3
+        mov     [intel_iommu.pasid_directory_0 + (8*0)], rax
+        add     rax, 4096
+        mov     [intel_iommu.pasid_directory_0 + (8*1)], rax
+        ; reload root table
+        mov     dword [iommu.intel.global_command], 1 shl 30
+        ; enable translation
+        mov     dword [iommu.intel.global_command], 2 shl 30
+        ; fallthrough to .load_libos
+
+
 
 
 .load_libos:
@@ -380,6 +459,7 @@ exec:
 	irp x,edx,ebx,esp,ebp,esi,edi,r8,r9,r10,r11,r12,r13,r14,r15 { xor x, x }
 	irp x,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 { xorps xmm#x, xmm#x }
 	sysretq
+
 
 ; inputs:    r12, r13
 ; outputs:   rax=physical base, r12, r13
