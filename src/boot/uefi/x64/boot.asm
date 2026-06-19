@@ -1,4 +1,4 @@
-include "config.inc"
+include "../../../../config.inc"
 
 use64
 
