@@ -1,0 +1,4 @@
+[toolchain]
+channel = "1.96"
+targets = ["x86_64-unknown-uefi"]
+profile = "minimal"

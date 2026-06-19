@@ -14,7 +14,8 @@ gpt=$out/root.img
 fallocate -l512K $fat
 mformat -i $fat
 mmd     -i $fat             ::/efi ::/efi/boot
-mcopy   -i $fat $out/bootx64.efi ::/efi/boot/bootx64.efi
+#mcopy   -i $fat $out/bootx64.efi ::/efi/boot/bootx64.efi
+mcopy   -i $fat $out/../rust/x86_64-unknown-uefi/release/genesys-uefi.efi ::/efi/boot/bootx64.efi
 mdir    -i $fat -/ -w -a
 
 fallocate -l1M $gpt

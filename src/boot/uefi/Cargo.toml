@@ -1,0 +1,13 @@
+[package]
+name = "genesys-uefi"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+log = "0.4.32"
+uefi = { version = "0.37.0", features = ["panic_handler", "logger"] }
+
+[profile.release]
+opt-level = 's'
+lto = "fat"
+codegen-units = 1

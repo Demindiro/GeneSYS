@@ -4,6 +4,7 @@ cp /etc/resolv.conf build/waddle-rootfs/etc/
 exec env -i \
 	HOME=/root \
 	PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/root/.cargo/bin \
+	CC=clang \
 	O=/out \
 	./build/waddle \
 	--base build/waddle-rootfs \
