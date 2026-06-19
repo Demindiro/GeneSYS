@@ -185,9 +185,8 @@ efi_invalid_parameter = (1 shl 63) or 2
 efi_buffer_too_small  = (1 shl 63) or 5
 efi_out_of_resources  = (1 shl 63) or 9
 
-
-virtual at 0
-	XSDT:
+macro define_acpi_table name {
+        name::
 		.signature:       rb 4
 		.length:          dd ?
 		.revision:        db ?
@@ -197,20 +196,70 @@ virtual at 0
 		.oemrevision:     dd ?
 		.creatorid:       dd ?
 		.creatorrevision: dd ?
+}
+
+
+virtual at 0
+        define_acpi_table ACPI_SDT
+end virtual
+
+
+virtual at 0
+        define_acpi_table DMAR
+                .host_address_width     db ?
+                .flags                  db ?
+                                        rb 10  ; reserved
+		.sizeof:
+end virtual
+assert DMAR.sizeof = 48
+
+virtual at 0
+        DMAR.REMAPPING_STRUCTURE::
+                .type           dw ?
+                .length         dw ?
+end virtual
+
+DMAR.REMAPPING_STRUCTURE.TYPE.DRHD = 0
+DMAR.REMAPPING_STRUCTURE.TYPE.RMRR = 1
+DMAR.REMAPPING_STRUCTURE.TYPE.ATSR = 2
+DMAR.REMAPPING_STRUCTURE.TYPE.RHSA = 3
+DMAR.REMAPPING_STRUCTURE.TYPE.ANDD = 4
+DMAR.REMAPPING_STRUCTURE.TYPE.SOTC = 5
+DMAR.REMAPPING_STRUCTURE.TYPE.SIDP = 6
+DMAR.REMAPPING_STRUCTURE.TYPE._max = 6
+
+
+virtual at 0
+        DMAR.DRHD::
+                .type           dw ?
+                .length         dw ?
+                .flags          db ?
+                .size           db ?
+                .segment_number dw ?
+                .register_bar   dq ?
+                .sizeof:
+end virtual
+
+virtual at 0
+        DMAR.DRHD.DEV_SCOPE::
+                .type                   db ?
+                .length                 db ?
+                .flags                  db ?
+                                        db ? ; reserved
+                .enumeration_id         db ?
+                .start_bus_number       db ?
+                .path                   rw 0
+                .sizeof:
+end virtual
+
+
+virtual at 0
+        define_acpi_table XSDT
 		.sizeof:
 end virtual
 
 virtual at 0
-	MCFG:
-		.signature:       rb 4
-		.length:          dd ?
-		.revision:        db ?
-		.checksum:        db ?
-		.oemid:           rb 6
-		.oemtableid:      rb 8
-		.oemrevision:     dd ?
-		.creatorid:       dd ?
-		.creatorrevision: dd ?
+        define_acpi_table MCFG
 		                  rb 8  ; reserved
 		.sizeof:
 end virtual
@@ -238,15 +287,17 @@ macro uefi._tracemsg lbl, str {
 	rodata
 	\{
 		local e
-		lbl: db e - $, str
+		lbl: db e - $ - 1, str
 		e:
 	\}
 }
 macro uefi.trace str {
 	local t
 	uefi._tracemsg t, str
+        push    rsi
 	lea rsi, [t]
 	call uefi._trace
+        pop     rsi
 }
 macro uefi.assertgez reg, msg {
 	local t
@@ -512,8 +563,12 @@ end virtual
 
 ; rsi: prefixed string base
 ;
-; preserved: rax, rcx, rdx, rbx, rdi
+; preserved: rax, rcx, rdx, rbx, rdi, r8-r15
 uefi._trace:
+        push r8
+        push r9
+        push r10
+        push r11
 	push rax
 	push rcx
 	push rdx
@@ -523,6 +578,10 @@ uefi._trace:
 	pop rdx
 	pop rcx
 	pop rax
+        pop r11
+        pop r10
+        pop r9
+        pop r8
 	ret
 ; rsi: string base
 ; rcx: string length
@@ -585,19 +644,23 @@ panic.mcfg_too_many_roots:
 ; scan subtables
 ; in particular, we want:
 ; - "MCFG" for PCIe
+; - "DMAR" for Intel VT-d
 xsdt_scan_tables:
 	mov r8, rsi
 	mov r9, rdi
 	jmp .c
 @@:	mov rsi, [r8]
+        mov ecx, [rsi + ACPI_SDT.length]
 	cmp dword [rsi], "MCFG"
 	je  .mcfg
+	cmp dword [rsi], "DMAR"
+	je  acpi_dmar
 .r:	add r8, 8
 .c:	cmp r8, r9
 	jne @b
 	ret
 .mcfg:
-	mov ecx, [rsi + MCFG.length]
+        uefi.trace "Found MCFG"
 	cmp ecx, MCFG.sizeof + (16 * PCIE.MAX_ROOTS)
 	ja panic.mcfg_too_many_roots
 	mov rdi, [start.kernel_phys]
@@ -614,6 +677,94 @@ xsdt_scan_tables:
 	cmp rsi, rbx
 	je .r
 	jmp @b
+
+acpi_dmar:
+        uefi.trace "Found DMAR"
+        lea     rbx, [rsi + rcx]
+        add     rsi, DMAR.sizeof
+@@:     
+        movzx   eax, word [rsi + DMAR.REMAPPING_STRUCTURE.type]
+        push    rbx
+        push    rsi
+        cmp     eax, DMAR.REMAPPING_STRUCTURE.TYPE._max
+        ja      .unknown_structure
+        lea     rdx, [.structure_lut]
+        movzx   eax, word [rdx + 2*rax]
+        lea     rdx, [acpi_dmar]
+        add     rdx, rax
+        jmp     rdx
+.r:     pop     rsi
+        pop     rbx
+        movzx   ecx, word [rsi + DMAR.REMAPPING_STRUCTURE.length]
+        add     rsi, rcx
+        cmp     rsi, rbx
+        je      xsdt_scan_tables.r
+        jmp     @b
+.drhd:
+        uefi.trace "DRHD"
+        mov     rdi, [start.kernel_phys]
+        mov     rax, [rsi + DMAR.DRHD.register_bar]
+        add     rdi, (1 shl 21) - BOOTINFO.sizeof + BOOTINFO.pcie + PCIE_SEGMENT.intel_iommu_base
+        stosq
+        movzx   ebx, word [rsi + DMAR.DRHD.length]
+        add     rbx, rsi
+        add     rsi, DMAR.DRHD.sizeof
+        xor     ecx, ecx
+@@:     add     rsi, rcx
+        cmp     rsi, rbx
+        je      .r
+        movzx   eax, byte [rsi + DMAR.DRHD.DEV_SCOPE.type]
+        movzx   ecx, byte [rsi + DMAR.DRHD.DEV_SCOPE.length]
+        cmp     al, 1
+        je      .drhd.pci_endpoint
+        cmp     al, 2
+        je      .drhd.pci_sub_hierarchy
+        cmp     al, 3
+        je      .drhd.ioapic
+        cmp     al, 4
+        je      .drhd.msi_capable_hpet
+        cmp     al, 5
+        je      .drhd.acpi_namespace_device
+        jmp     .drhd.unknown
+.drhd.pci_endpoint:
+        uefi.trace "PCI Endpoint Device"
+        jmp     @b
+.drhd.pci_sub_hierarchy:
+        uefi.trace "PCI Sub-hierarchy"
+        jmp     @b
+.drhd.ioapic:
+        uefi.trace "IOAPIC"
+        jmp     @b
+.drhd.msi_capable_hpet:
+        uefi.trace "MSI_CAPABLE_HPET"
+        jmp     @b
+.drhd.acpi_namespace_device:
+        uefi.trace "ACPI_NAMESPACE_DEVICE"
+        jmp     @b
+.drhd.unknown:
+        uefi.trace "unknown"
+        jmp     @b
+.atsr:
+        uefi.trace "DMAR: ATSR"
+        jmp     .r
+.rhsa:
+        uefi.trace "DMAR: RHSA"
+        jmp     .r
+.andd:
+        uefi.trace "DMAR: ANDD"
+        jmp     .r
+.sotc:
+        uefi.trace "DMAR: SOTC"
+        jmp     .r
+.sidp:
+        uefi.trace "DMAR: SIDP"
+        jmp     .r
+.unknown_structure:
+        uefi.trace "DMAR: unknown structure"
+        jmp     .r
+.structure_lut:
+irp x, .drhd,.atsr,.rhsa,.andd,.sotc,.sidp
+{       dw      x - acpi_dmar      }
 
 
 include "../util/memmap.asm"

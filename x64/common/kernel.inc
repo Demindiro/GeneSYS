@@ -17,3 +17,13 @@ virtual at 0
 		.pcie: rb (PCIE.MAX_ROOTS * 16)
 		.sizeof:
 end virtual
+
+virtual at 0
+        PCIE_SEGMENT::
+                .start_addr             dq ?
+                .end_addr               dq ?
+                .intel_iommu_base       dq ?
+                                        dq ?  ; reserved/padding
+                .sizeof:
+                .FLAG_INTEL_VT_D = 1 shl 0
+end virtual
