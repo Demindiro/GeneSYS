@@ -3,7 +3,7 @@ src="$(dirname "$0")"
 set -xe
 mkdir -p $out/
 
-fasm $src/../common/kernel.asm $out/kernel.bin
+fasm $src/../../../kernel/x64/common/kernel.asm $out/kernel.bin
 fasm $src/boot.asm $out/bootx64.efi
 
 

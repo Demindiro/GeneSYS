@@ -1,4 +1,4 @@
-include "../config.inc"
+include "config.inc"
 
 use64
 
@@ -767,7 +767,7 @@ irp x, .drhd,.atsr,.rhsa,.andd,.sotc,.sidp
 {       dw      x - acpi_dmar      }
 
 
-include "../util/memmap.asm"
+include "../../../kernel/x64/util/memmap.asm"
 
 uefi.println._crlf: db 13, 10
 hello_uefi: db "Hello, UEFI!"
@@ -779,10 +779,10 @@ efi_acpi_20_table_guid:
 	dw 0xe4f1,0x11d3
 	db 0xbc,0x22,0x00,0x80,0xc7,0x3c,0x88,0x81
 
-include "../util/paging.asm"
-include "../util/registers.asm"
+include "../../../kernel/x64/util/paging.asm"
+include "../../../kernel/x64/util/registers.asm"
 
-include "../common/kernel.inc"
+include "../../../kernel/x64/common/kernel.inc"
 align 64
 kernel: file '%out%/kernel.bin'
 ; to simplify things, include libos along with the kernel :)
