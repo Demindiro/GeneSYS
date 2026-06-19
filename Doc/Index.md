@@ -9,6 +9,7 @@ Chapters
 
 1. [What is an exokernel?](exokernel.md)
 2. [Compute model](model.md)
-3. [Supported architectures](arch.md)
+3. [Boot process](boot.md)
+4. [Supported architectures](arch.md)
    1. [x86-64 / x64 / AMD64 / IA32e](arch/x64.md)
-4. [Debugging](debugging.md)
+5. [Debugging](debugging.md)
