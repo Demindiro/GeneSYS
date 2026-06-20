@@ -117,33 +117,7 @@ end virtual
 use64
 
 org 0xffffffffc0000000
-virtual at (exec.end - BOOTINFO.sizeof)
-	bootinfo:
-	; physical base address of the kernel code + data.
-	; it is exactly 4M, with first 2M for code and last 2M for data.
-	; it *must* be aligned on a 2M boundary.
-	.phys_base: dq ?
-	; the physical address of the initial page table.
-	;
-	; this table is immutable and can be used for "fast reboots".
-	.init_pagetable: dq ?
-        ; arrays with offsets in terms of pages
-        ; i.e. PPN = page_size * x
-        ; for 2M and larger this covers all possible physical addresses (max 2**52)
-        ; for 4K pages this only goes up to 2**44, but this is unlikely to be an issue.
-        ; starts with 4K pages, then 2M, finally 1G
-        .mem_pages.base         dq ?
-        .mem_pages_4k.len       dd ?
-        .mem_pages_2m.len       dd ?
-        .mem_pages_1g.len       dd ?
-                                dd ?    ; padding
-	; the start (incl) address of the initial libos
-	.libos.start: dq ?
-	; the end (excl) address of the initial libos
-	.libos.end:   dq ?
-	; list of PCIe root bases
-	.pcie:        rb (PCIE.MAX_ROOTS * PCIE_SEGMENT.sizeof)
-end virtual
+decl_bootinfo bootinfo, (exec.end - bootinfo.sizeof)
 exec:
 	; clear data region
 	mov ecx, (dat.end - dat) / 8
@@ -440,7 +414,7 @@ exec:
 	call paging.map_2m
 	; copy OS code
 	mov rsi, [bootinfo.libos.start]
-	mov ecx, [bootinfo.libos.end  ]
+	mov rcx, [bootinfo.libos.end  ]
 	mov rdi, init_libos.base
 	sub ecx, esi
 	shr ecx, 3

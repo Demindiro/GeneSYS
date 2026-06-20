@@ -929,3 +929,6 @@ assert (kernel.end - kernel) <= (3 shl 20)
 times ((-$) and 0xfff) db 0
 
 text_end:
+
+
+decl_bootinfo BOOTINFO, 0
