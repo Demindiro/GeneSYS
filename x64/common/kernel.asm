@@ -127,17 +127,16 @@ virtual at (exec.end - BOOTINFO.sizeof)
 	;
 	; this table is immutable and can be used for "fast reboots".
 	.init_pagetable: dq ?
-	; the start (incl) address of the map with regular usable memory
-	;
-	; note that this *includes* the memory used by the kernel.
-	; to avoid incidents, always check `phys_base` before using memory
-	; defined in this map.
-	;
-	; the memory map should be in the code region to keep it immutable
-	; and keep more of the data region free.
-	.memmap.start: dq ?
-	; the end (excl) address of the map with regular usable memory
-	.memmap.end: dq ?
+        ; arrays with offsets in terms of pages
+        ; i.e. PPN = page_size * x
+        ; for 2M and larger this covers all possible physical addresses (max 2**52)
+        ; for 4K pages this only goes up to 2**44, but this is unlikely to be an issue.
+        ; starts with 4K pages, then 2M, finally 1G
+        .mem_pages.base         dq ?
+        .mem_pages_4k.len       dd ?
+        .mem_pages_2m.len       dd ?
+        .mem_pages_1g.len       dd ?
+                                dd ?    ; padding
 	; the start (incl) address of the initial libos
 	.libos.start: dq ?
 	; the end (excl) address of the initial libos
@@ -222,8 +221,7 @@ exec:
 	xor edx, edx
 	wrmsr
 
-	mov r13, [bootinfo.memmap.start]
-	mov r12, [r13]
+        xor r13, r13
 
 .init_pagetables:
 	; allocate and initialize page table
@@ -461,28 +459,17 @@ exec:
 	sysretq
 
 
-; inputs:    r12, r13
-; outputs:   rax=physical base, r12, r13
+; inputs:    r13
+; outputs:   rax=physical base, r13
 ; clobbers:  rdx
 _init.alloc_2m:
-	; align to 2M boundary and step
-	add  r12, not (-1 shl 21)
-	and  r12,     (-1 shl 21)
-	mov  rax, r12
-	add  r12, 1 shl 21
-	; ensure the page is within the current region
-	cmp  r12, [r13 + 8]
-	ja   .next_region
-	; ensure the page isn't already used by the kernel
-	mov  rdx, rax
-	sub  rdx, [bootinfo.phys_base]
-	cmp  rdx, 2 shl 21
-	jb   _init.alloc_2m
-	ret
-.next_region:
-	add  r13, 16
-	mov  r12, [r13]
-	jmp  _init.alloc_2m
+        mov     rax, [bootinfo.mem_pages.base]
+        mov     edx, [bootinfo.mem_pages_4k.len]
+        lea     rax, [rax + 4*rdx]
+        mov     eax, [rax + 4*r13]
+        inc     r13
+        shl     rax, 21
+        ret
 
 
 panic.no_iommu:

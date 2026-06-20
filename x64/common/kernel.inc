@@ -9,8 +9,11 @@ virtual at 0
 	BOOTINFO:
 		.phys_base:      dq ?
 		.init_pagetable: dq ?
-		.memmap.start:   dq ?
-		.memmap.end:     dq ?
+                .mem_pages.base         dq ?
+                .mem_pages_4k.len       dd ?
+                .mem_pages_2m.len       dd ?
+                .mem_pages_1g.len       dd ?
+                                        dd ?    ; padding
 		.libos.start:    dq ?
 		.libos.end:      dq ?
 		; list of PCIe root bases

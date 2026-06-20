@@ -456,9 +456,8 @@ end virtual
 .copy_memmap:
 	; TODO currently, we can store a maximum of "only" (0x4000 - 64) / 16 = 1020 entries
 	; ... probably enough, but we should add more checks. Or put it elsewhere.
-	mov rdi, [.kernel_phys]
-	add rdi, (1 shl 21) - BOOTINFO.sizeof
 	lea rsi, [rsp + 8]
+	mov rdi, rsi            ; overwrite in-place
 	add rcx, rsi
 @@:	mov eax, [rsi + EFI_MEMORY_DESCRIPTOR.Type]
 	cmp eax, EfiConventionalMemory
@@ -466,33 +465,164 @@ end virtual
 	sub eax, usable_memory_types.0.start
 	cmp eax, usable_memory_types.0.end - usable_memory_types.0.start
 	jae .n
-.a:	sub rdi, 16
-	mov rdx, [rsi + EFI_MEMORY_DESCRIPTOR.NumberOfPages]
+.a:
+        mov rdx, [rsi + EFI_MEMORY_DESCRIPTOR.NumberOfPages]
 	mov rax, [rsi + EFI_MEMORY_DESCRIPTOR.PhysicalStart]
 	shl rdx, 12
 	add rdx, rax
 	mov [rdi + 0], rax
 	mov [rdi + 8], rdx
+        add rdi, 16
 .n:	add rsi, rbx
 	cmp rsi, rcx
 	jne @b
 
-	mov rsi, [.kernel_phys]
-	add rsi, (1 shl 21) - BOOTINFO.sizeof
+        mov     rsi, rdi
+        lea     rdi, [rsp + 8]
 	call memmap.radixsort
 	call memmap.merge
 
-	mov rax, [.kernel_phys]
-	lea rbx, [rax + (1 shl 21) - BOOTINFO.sizeof]
-	; we used physical addresses while populating the memory map
-	; to avoid touching the UEFI page table, but the kernel expects
-	; virtual addresses
-	mov rdx, KERNEL.CODE.START
-	sub rdx, rax
-	lea rax, [rdx + rdi]
-	lea rcx, [rdx + rsi]
-	mov [rbx + BOOTINFO.memmap.start], rax
-	mov [rbx + BOOTINFO.memmap.end  ], rcx
+        ; count how much of each size (4K/2M/1G)
+        xor     r8, r8
+        xor     r9, r9
+        xor     r10, r10
+        push    rdi
+@@:
+        mov     rdx, [rdi + 8*0]
+        mov     rbx, [rdi + 8*1]
+        ; for each page size
+        ; - max(floor(down) - ceil(up), 0)
+        ; 1G
+        mov     rax, rdx
+        mov     rcx, rbx
+        add     rax, (1 shl 30) - 1
+        shr     rcx, 30
+        shr     rax, 30
+        sub     rcx, rax
+        xor     eax, eax
+        test    rcx, rcx        ; max 52 bits => negative numbers impossible
+        cmovs   rcx, rax
+        add     r10, rcx
+        mov     r11, rcx
+        shl     r11, 9
+        ; 2M
+        mov     rax, rdx
+        mov     rcx, rbx
+        add     rax, (1 shl 21) - 1
+        shr     rcx, 21
+        shr     rax, 21
+        sub     rcx, rax
+        xor     rax, rax
+        test    rcx, rcx        ; max 52 bits => negative numbers impossible
+        cmovs   rcx, rax
+        add     r9, rcx
+        sub     r9, r11
+        mov     r11, rcx
+        shl     r11, 9
+        ; 4K
+        add     rdx, (1 shl 12) - 1
+        shr     rbx, 12
+        shr     rdx, 12
+        sub     rbx, rdx
+        xor     rax, rax
+        test    rbx, rbx        ; max 52 bits => negative numbers impossible
+        cmovs   rbx, rax
+        add     r8, rbx
+        sub     r8, r11
+        ; next
+        add     rdi, 16
+        cmp     rdi, rsi
+        jne     @b
+        pop     rdi
+
+        ; collect PPNs
+        mov     rbx, [.kernel_phys]
+        lea     rbx, [rbx + (1 shl 21) - BOOTINFO.sizeof]
+        mov     rax, rbx
+        mov     [rbx + BOOTINFO.mem_pages_1g.len], r10d
+        mov     [rbx + BOOTINFO.mem_pages_2m.len], r9d
+        mov     [rbx + BOOTINFO.mem_pages_4k.len], r8d
+        shl     r10, 2
+        shl     r9, 2
+        shl     r8, 2
+        sub     rax, r10
+        mov     r10, rax
+        sub     rax, r9
+        mov     r9, rax
+        sub     rax, r8
+        mov     r8, rax
+        ; translate phys -> virt
+        sub     rax, [.kernel_phys]
+        add     rax, KERNEL.CODE.START
+        mov     [rbx + BOOTINFO.mem_pages.base], rax
+.collect_ppns:
+        mov     rax, [rdi + 8*0]
+        mov     rcx, [rdi + 8*1]
+        mov     r11, rax
+        mov     rdx, rcx
+        ; collect 4K pages (head)
+        and     rdx, not ((1 shl 12) - 1)
+@@:     cmp     rax, rdx
+        je      .next
+        mov     rbx, rax
+        shr     rbx, 12
+        mov     [r8], ebx
+        add     r8, 4
+        add     rax, 1 shl 12
+        test    rax, (1 shl 21) - 1
+        jnz     @b
+        ; collect 2M pages (head)
+        and     rdx, not ((1 shl 21) - 1)
+@@:     cmp     rax, rdx
+        je      .tail_4k
+        mov     rbx, rax
+        shr     rbx, 21
+        mov     [r9], ebx
+        add     r9, 4
+        add     rax, 1 shl 21
+        test    rax, (1 shl 30) - 1
+        jnz     @b
+        ; collect 1G pages
+        and     rdx, not ((1 shl 30) - 1)
+@@:     cmp     rax, rdx
+        je      .tail_2m
+        mov     rbx, rax
+        shr     rbx, 30
+        mov     [r10], ebx
+        add     r10, 4
+        add     rax, 1 shl 30
+        jmp     @b
+.tail_2m:
+        ; collect 2M pages (tail)
+        mov     rdx, rcx
+        add     rdx, (1 shl 21) - 1
+        and     rdx, not ((1 shl 21) - 1)
+@@:     cmp     rax, rdx
+        je      .tail_4k
+        mov     rbx, rax
+        shr     rbx, 21
+        mov     [r9], ebx
+        add     r9, 4
+        add     rax, 1 shl 21
+        jmp     @b
+.tail_4k:
+        ; collect 4K pages (tail)
+        mov     rdx, rcx
+        add     rdx, (1 shl 12) - 1
+        and     rdx, not ((1 shl 12) - 1)
+@@:     cmp     rax, rdx
+        je      .next
+        mov     rbx, rax
+        shr     rbx, 12
+        mov     [r8], ebx
+        add     r8, 4
+        add     rax, 1 shl 12
+        jmp     @b
+.next:
+        ; next range
+        add     rdi, 16
+        cmp     rdi, rsi
+        jne     .collect_ppns
 
 	; 7.4.6 EFI_BOOT_SERVICES.ExitBootServices()
 	; EFI_STATUS (EFIAPI *EFI_EXIT_BOOT_SERVICES) (
