@@ -97,22 +97,6 @@ virtual at iommu
         intel_iommu.decl_mmio iommu.intel
 end virtual
 
-virtual at intel_iommu.translation_structures
-        intel_iommu:
-                .root_address_table     rq 2*256
-                .context_table_0        rq 4*256
-                ; Notes
-                ; - We don't support request-with-PASID (PASID in TLP)
-                ; - We do need at least one directory entry for each device
-                ; - 2^(x+7) => at least 128 entries.
-                ;   Note that each leaf has exactly 64 entries, so at least 2 leaves
-                .pasid_table_0          rq 8*64*2
-                ; at least 2 tables
-                .pasid_directory_0      rq 2
-                .sizeof = $ - intel_iommu
-        assert intel_iommu.sizeof <= (1 shl 21)
-end virtual
-
 
 use64
 
