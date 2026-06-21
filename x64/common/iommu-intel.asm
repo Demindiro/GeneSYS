@@ -1,3 +1,11 @@
+include "../util/intel-iommu.asm"
+
+
+virtual at iommu
+        intel_iommu.decl_mmio iommu.intel
+end virtual
+
+
 virtual at intel_iommu.translation_structures
         intel_iommu:
                 .root_address_table     rq 2*256

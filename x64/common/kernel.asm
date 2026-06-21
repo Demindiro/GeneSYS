@@ -41,7 +41,6 @@
 
 include "kernel.inc"
 include "../util/amd-iommu.asm"
-include "../util/intel-iommu.asm"
 include "../util/paging.asm"
 include "../util/pci.asm"
 include "../util/registers.asm"
@@ -91,10 +90,6 @@ LIBOS.INTR.DEBUG = 31
 
 virtual at iommu
 	amd_iommu.decl_mmio iommu.amd
-end virtual
-
-virtual at iommu
-        intel_iommu.decl_mmio iommu.intel
 end virtual
 
 
