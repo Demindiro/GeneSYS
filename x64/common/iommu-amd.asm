@@ -1,3 +1,15 @@
+include "../util/amd-iommu.asm"
+
+
+IOMMU.PAGE.RW = AMD_IOMMU.PTE.NEXTLVL.0 + AMD_IOMMU.PTE.IR + AMD_IOMMU.PTE.IW
+
+
+virtual at iommu
+	amd_iommu.decl_mmio iommu.amd
+end virtual
+
+
+
 amd_iommu.init:
 	mov  rsi, pcie_mmcfg
 	lea  rbx, [rsi + (1 shl 28)]

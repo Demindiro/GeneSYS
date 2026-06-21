@@ -40,7 +40,6 @@
 ; 511: 0xffffffffc0000000 - 0x0000000000000000 : kernel (see above)
 
 include "kernel.inc"
-include "../util/amd-iommu.asm"
 include "../util/paging.asm"
 include "../util/pci.asm"
 include "../util/registers.asm"
@@ -87,10 +86,6 @@ IA32_EFER.NXE = 1 shl 11
 LIBOS.FLAGS.INTR_DEBUG_PENDING = 0
 LIBOS.INTR.TIMER =  1
 LIBOS.INTR.DEBUG = 31
-
-virtual at iommu
-	amd_iommu.decl_mmio iommu.amd
-end virtual
 
 
 use64
@@ -237,7 +232,7 @@ exec:
 	; OS code/data
 	call _init.alloc_2m
 	mov  rdi, init_libos.base
-        mov     rsi, PAGE.P + PAGE.PS + PAGE.RW + PAGE.US + AMD_IOMMU.PTE.NEXTLVL.0 + AMD_IOMMU.PTE.IR + AMD_IOMMU.PTE.IW
+        mov     rsi, PAGE.P + PAGE.PS + PAGE.RW + PAGE.US + IOMMU.PAGE.RW
         or      rsi, rax
 	call paging.map_2m
 	; copy OS code

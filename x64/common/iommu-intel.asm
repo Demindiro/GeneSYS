@@ -1,6 +1,9 @@
 include "../util/intel-iommu.asm"
 
 
+IOMMU.PAGE.RW = 0
+
+
 virtual at iommu
         intel_iommu.decl_mmio iommu.intel
 end virtual
