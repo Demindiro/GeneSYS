@@ -82,14 +82,17 @@ _paging.map_page:
         ; translate virt->phys
 	add  rax, rbp
         ; set bits
-        mov     rbx, PAGE.P + PAGE.RW + PAGE.US + AMD_IOMMU.PTE.IR + AMD_IOMMU.PTE.IW
+        mov     rbx, PAGE.P + PAGE.RW + PAGE.US + IOMMU.PAGE.RW
         or      rax, rbx
+; TODO figure out how to abstract this nicely (macro?)
+if 0
         ; set NextLevel bits for IOMMU
         mov     ebx, ecx
         imul    ebx, ((1 shl 24) / 9)
         shr     ebx, 24
         shl     ebx, AMD_IOMMU.PTE.NEXTLVL_SHIFT
         or      rax, rbx
+end if
         ; put entry
 	mov  [rdx], rax
         pop     rbx
