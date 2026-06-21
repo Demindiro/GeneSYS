@@ -488,7 +488,7 @@ include "debug.asm"
 include "idt.asm"
 include "syscall.asm"
 include "paging.asm"
-include "iommu.asm"
+include "iommu-intel.asm"
 
 idtr: dw idt.end - idt - 1
       dq idt
