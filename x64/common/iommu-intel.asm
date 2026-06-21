@@ -13,6 +13,7 @@ virtual at intel_iommu.translation_structures
         intel_iommu:
                 .root_address_table     rq 2*256
                 .context_table_0        rq 4*256
+                .intr_remap_table       rq 2*256
                 ; Notes
                 ; - We don't support request-with-PASID (PASID in TLP)
                 ; - We do need at least one directory entry for each device
@@ -61,10 +62,22 @@ intel_iommu.init:
         mov     [intel_iommu.pasid_directory_0 + (8*0)], rax
         add     rax, 4096
         mov     [intel_iommu.pasid_directory_0 + (8*1)], rax
-        ; reload root table
-        mov     dword [iommu.intel.global_command], 1 shl 30
-        ; enable translation
-        mov     dword [iommu.intel.global_command], 2 shl 30
+        ; set interrupt remapping table
+        mov     qword [iommu.intel.intr_remap_tbl_addr], intel_iommu.intr_remap_table
+        ; reload root table and interrupt remapping table
+        mov     dword [iommu.intel.global_command], (1 shl 30) + (1 shl 24)
+@@:     pause
+        mov     eax, [iommu.intel.global_status]
+        not     eax     ; invert so set bits become clear
+        test    eax, (1 shl 30) + (1 shl 24)
+        jnz     @b      ; we want all bits _clear_
+        ; enable translation of DMA and interrupts
+        mov     dword [iommu.intel.global_command], (1 shl 31) + (1 shl 25)
+@@:     pause
+        mov     eax, [iommu.intel.global_status]
+        not     eax     ; invert so set bits become clear
+        test    eax, (1 shl 31) + (1 shl 25)
+        jnz     @b      ; we want all bits _clear_
         ret
 
 

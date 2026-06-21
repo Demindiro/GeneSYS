@@ -8,7 +8,7 @@ exec $QEMUWRAP "$QEMU" \
 	-machine q35 \
 	-cpu max \
 	-bios "$UEFI_BIOS" \
-	-device intel-iommu,x-scalable-mode,x-flts \
+	-device intel-iommu,intremap=on,x-scalable-mode=on,x-flts=on \
 	-device edu,dma_mask=0xffffffffffffffff \
 	-drive file="$ROOT",if=virtio,format=raw \
 	-serial unix:/tmp/genesys.unix \
