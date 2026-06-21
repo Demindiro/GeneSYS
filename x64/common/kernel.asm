@@ -251,7 +251,8 @@ exec:
 .start_libos:
 	xor eax, eax
 	mov rcx, init_libos.base
-	irp x,edx,ebx,esp,ebp,esi,edi,r8,r9,r10,r11,r12,r13,r14,r15 { xor x, x }
+        mov r11, 1 shl 9  ; IF
+        irp x,edx,ebx,esp,ebp,esi,edi,r8,r9,r10,r12,r13,r14,r15 { xor x, x }
 	irp x,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 { xorps xmm#x, xmm#x }
 	sysretq
 
