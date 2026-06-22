@@ -79,6 +79,14 @@ intel_iommu.init:
         not     eax     ; invert so set bits become clear
         test    eax, (1 shl 31) + (1 shl 25)
         jnz     @b      ; we want all bits _clear_
+
+
+        ; set COM1 IRTE
+        mov     qword [intel_iommu.intr_remap_table + 8*0], (1 shl 2) + 1
+        mov     qword [intel_iommu.intr_remap_table + 8*0], (248 shl 16) + (1 shl 4) + 1
+        mov     qword [intel_iommu.intr_remap_table + 8*1], 0
+
+
         ret
 
 
