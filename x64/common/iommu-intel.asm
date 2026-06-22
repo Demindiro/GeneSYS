@@ -12,6 +12,7 @@ end virtual
 virtual at intel_iommu.translation_structures
         intel_iommu:
                 .root_address_table     rq 2*256
+                .intr_remap_table       rq 2*256
                 .context_table_0        rq 4*256
                 ; Notes
                 ; - We don't support request-with-PASID (PASID in TLP)
@@ -45,6 +46,10 @@ intel_iommu.init:
         mov     rdi, intel_iommu.translation_structures
         xor     eax, eax
         rep stosq
+        ; set interrupt remapping table
+        mov     rax, [rsp]
+        add     rax, (1 shl 12) + 7 ; 4096/16=256, 2**(1+x)=256 <=> x=7
+        mov     qword [iommu.intel.intr_remap_tbl_addr], rax
         ; set root table in scalable mode
         pop     rax     ; <0>
         mov     rdx, rax
@@ -57,14 +62,31 @@ intel_iommu.init:
         mov     [intel_iommu.root_address_table + (8*1)], rax
         ; link PASID tables
         lea     rax, [rdx + (intel_iommu.pasid_table_0 - intel_iommu) + 1]
-        int3
         mov     [intel_iommu.pasid_directory_0 + (8*0)], rax
         add     rax, 4096
         mov     [intel_iommu.pasid_directory_0 + (8*1)], rax
-        ; reload root table
-        mov     dword [iommu.intel.global_command], 1 shl 30
-        ; enable translation
-        mov     dword [iommu.intel.global_command], 2 shl 30
+        ; reload root table and interrupt remapping table
+        mov     dword [iommu.intel.global_command], (1 shl 30) + (1 shl 24)
+@@:     pause
+        mov     eax, [iommu.intel.global_status]
+        not     eax     ; invert so set bits become clear
+        test    eax, (1 shl 30) + (1 shl 24)
+        jnz     @b      ; we want all bits _clear_
+        ; enable translation of DMA and interrupts
+        mov     dword [iommu.intel.global_command], (1 shl 31) + (1 shl 25)
+@@:     pause
+        mov     eax, [iommu.intel.global_status]
+        not     eax     ; invert so set bits become clear
+        test    eax, (1 shl 31) + (1 shl 25)
+        jnz     @b      ; we want all bits _clear_
+
+
+        ; set COM1 IRTE
+        mov     qword [intel_iommu.intr_remap_table + 8*0], (1 shl 2) + 1
+        mov     qword [intel_iommu.intr_remap_table + 8*0], (248 shl 16) + (1 shl 4) + 1
+        mov     qword [intel_iommu.intr_remap_table + 8*1], 0
+
+
         ret
 
 
@@ -97,6 +119,10 @@ iommu.enable_device:
         mov     qword [rdi +  8], (0 shl 2) + 1
         ; PGTT = first-stage only, AW = 48-bit, P = 1
         mov     qword [rdi +  0], (1 shl 6) + (2 shl 2) + 1
+        ; TODO should be an explicit syscall
+        mov     qword [intel_iommu.intr_remap_table + 8*2], (1 shl 2) + 1
+        mov     qword [intel_iommu.intr_remap_table + 8*2], (100 shl 16) + 1
+        mov     qword [intel_iommu.intr_remap_table + 8*3], 0
         ; flush context cache
         mov     rax, (1 shl 63) + (1 shl 61)
         mov     [iommu.intel.context_command], rax

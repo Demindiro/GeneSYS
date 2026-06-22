@@ -170,6 +170,18 @@ start:
 
         trace   msg_edu_dev_ok
 
+        ; hippity hoppity I crash your property
+        mov     rax, 0xfee00000
+        ;mov     rax, 0xfee00010
+        mov     rax, 0xfee00038
+        mov     qword [rdi + dev.edu.dma.src], 0x40000 + 16
+        mov     qword [rdi + dev.edu.dma.dst], rax
+        mov     qword [rdi + dev.edu.dma.len], 4
+        mov     dword [rdi + dev.edu.dma.cmd], DEV.EDU.DMA.START + DEV.EDU.DMA.DIR
+        mov ecx, 1 shl 24
+        @@: loop @b
+@@:     test    dword [rdi + dev.edu.dma.cmd], DEV.EDU.DMA.START
+        jnz     @b
 	ud2
 
 

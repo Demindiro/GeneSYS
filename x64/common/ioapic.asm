@@ -19,5 +19,5 @@ ioapic.init:
 	mov dword [ioapic.addr], 0x10 + 2*4
 	mov dword [ioapic.data], 0x80f8
 	mov dword [ioapic.addr], 0x11 + 2*4
-	mov dword [ioapic.data], 0
+	mov dword [ioapic.data], 1 shl 16       ; 0 = compatible mode, 1 = remap mode
 	ret
