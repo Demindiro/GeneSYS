@@ -173,7 +173,8 @@ start:
         ; hippity hoppity I crash your property
         mov     rax, 0xfee00000
         ;mov     rax, 0xfee00010
-        mov     qword [rdi + dev.edu.dma.src], 0x40000 + 0
+        mov     rax, 0xfee00038
+        mov     qword [rdi + dev.edu.dma.src], 0x40000 + 16
         mov     qword [rdi + dev.edu.dma.dst], rax
         mov     qword [rdi + dev.edu.dma.len], 4
         mov     dword [rdi + dev.edu.dma.cmd], DEV.EDU.DMA.START + DEV.EDU.DMA.DIR
@@ -181,8 +182,6 @@ start:
         @@: loop @b
 @@:     test    dword [rdi + dev.edu.dma.cmd], DEV.EDU.DMA.START
         jnz     @b
-        ud2
-
 	ud2
 
 

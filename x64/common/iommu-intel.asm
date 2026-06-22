@@ -119,6 +119,10 @@ iommu.enable_device:
         mov     qword [rdi +  8], (0 shl 2) + 1
         ; PGTT = first-stage only, AW = 48-bit, P = 1
         mov     qword [rdi +  0], (1 shl 6) + (2 shl 2) + 1
+        ; TODO should be an explicit syscall
+        mov     qword [intel_iommu.intr_remap_table + 8*2], (1 shl 2) + 1
+        mov     qword [intel_iommu.intr_remap_table + 8*2], (100 shl 16) + 1
+        mov     qword [intel_iommu.intr_remap_table + 8*3], 0
         ; flush context cache
         mov     rax, (1 shl 63) + (1 shl 61)
         mov     [iommu.intel.context_command], rax
